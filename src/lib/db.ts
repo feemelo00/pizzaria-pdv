@@ -308,7 +308,7 @@ export const pedidosDb = {
 
     // Cria itens
     for (const item of itens) {
-      const { adicionais, ...itemData } = item
+      const { adicionais, pizza_ingredientes, pizza_metade_1_ingredientes, pizza_metade_2_ingredientes, ...itemData } = item
       const { data: itemSalvo, error: errItem } = await supabase
         .from('itens_pedido').insert({ ...itemData, pedido_id: pedido.id }).select().single()
       if (errItem) throw new Error(errItem.message)
