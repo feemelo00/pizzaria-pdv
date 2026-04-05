@@ -58,11 +58,13 @@ export function KanbanPage() {
   useEffect(() => { if (data) setPedidos(data as any) }, [data])
 
   // Realtime
-  useRealtimePedidos(useCallback((novoPedido, evento) => {
+  useRealtimePedidos(useCallback(async (novoPedido, evento) => {
     if (evento === 'INSERT') {
+      // Busca o pedido completo com itens e cliente
+      const pedidoCompleto = await pedidosDb.buscarPorId(novoPedido.id)
       setPedidos(prev => {
         if (prev.find(p => p.id === novoPedido.id)) return prev
-        return [novoPedido, ...prev]
+        return [pedidoCompleto, ...prev]
       })
     } else {
       setPedidos(prev => prev.map(p => p.id === novoPedido.id ? { ...p, ...novoPedido } : p))

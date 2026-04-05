@@ -19,9 +19,10 @@ export function CozinhaPage() {
 
   useEffect(() => { if (data) setPedidos(data) }, [data])
 
-  useRealtimePedidos(useCallback((p, evento) => {
+  useRealtimePedidos(useCallback(async (p, evento) => {
     if (evento === 'INSERT') {
-      setPedidos(prev => prev.find(x => x.id === p.id) ? prev : [p, ...prev])
+      const pedidoCompleto = await pedidosDb.buscarPorId(p.id)
+      setPedidos(prev => prev.find(x => x.id === p.id) ? prev : [pedidoCompleto, ...prev])
     } else {
       setPedidos(prev => {
         if (['finalizado','devolvido','pronto','delivery','balcao'].includes(p.status)) {
