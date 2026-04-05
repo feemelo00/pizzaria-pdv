@@ -1,16 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { pedidosDb } from '../lib/db'
-import { useRealtimePedidos } from '../hooks/useRealtime'
 import { StatusBadge, Spinner } from '../components/ui'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Printer, ChevronRight, AlertTriangle } from 'lucide-react'
-import type { Pedido, StatusPedido } from '../lib/supabase'
+import type { StatusPedido } from '../lib/supabase'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 
-const COLUNAS: { status: StatusPedido; label: string; cor: string; acoes: { label: string; prox: StatusPedido; variant?: string }[] }[] = [
+const COLUNAS: {
+  status: StatusPedido
+  label: string
+  cor: string
+  acoes: { label: string; prox: StatusPedido; variant?: string }[]
+}[] = [
   {
     status: 'solicitado', label: 'Solicitados', cor: 'border-t-yellow-500',
     acoes: [
@@ -46,53 +50,67 @@ const COLUNAS: { status: StatusPedido; label: string; cor: string; acoes: { labe
 ]
 
 export function KanbanPage() {
-  const qc = useQueryClient()
-  const [pedidos, setPedidos] = useState<Pedido[]>([])
+  const [pedidos, setPedidos] = useState<any[]>([])
+  const [ultimoCount, setUltimoCount] = useState(0)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['pedidos-ativos'],
     queryFn: pedidosDb.listarAtivos,
-    refetchInterval: 60_000,
+    refetchInterval: 10_000, // atualiza a cada 10 segundos
+    refetchIntervalInBackground: true,
   })
 
-  useEffect(() => { if (data) setPedidos(data as any) }, [data])
-
-  // Realtime
-  useRealtimePedidos(useCallback(async (novoPedido, evento) => {
-    if (evento === 'INSERT') {
-      // Busca o pedido completo com itens e cliente
-      const pedidoCompleto = await pedidosDb.buscarPorId(novoPedido.id)
-      setPedidos(prev => {
-        if (prev.find(p => p.id === novoPedido.id)) return prev
-        return [pedidoCompleto, ...prev]
-      })
-    } else {
-      setPedidos(prev => prev.map(p => p.id === novoPedido.id ? { ...p, ...novoPedido } : p))
-      // Remove da lista se finalizou ou devolveu
-      if (['finalizado', 'devolvido'].includes(novoPedido.status)) {
+  useEffect(() => {
+    if (!data) return
+    // Alerta sonoro se chegou pedido novo
+    if (ultimoCount > 0 && data.length > ultimoCount) {
+      const novos = data.length - ultimoCount
+      for (let i = 0; i < novos; i++) {
         setTimeout(() => {
-          setPedidos(prev => prev.filter(p => p.id !== novoPedido.id))
-        }, 2000)
+          try {
+            const ctx = new AudioContext()
+            const osc = ctx.createOscillator()
+            const gain = ctx.createGain()
+            osc.connect(gain)
+            gain.connect(ctx.destination)
+            osc.frequency.setValueAtTime(880, ctx.currentTime)
+            osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1)
+            gain.gain.setValueAtTime(0.3, ctx.currentTime)
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
+            osc.start(ctx.currentTime)
+            osc.stop(ctx.currentTime + 0.4)
+          } catch {}
+          toast.success(`🍕 Novo pedido chegou!`, { duration: 8000 })
+        }, i * 500)
       }
     }
-  }, []))
+    setUltimoCount(data.length)
+    setPedidos(data as any)
+  }, [data])
 
   const { mutate: mudarStatus } = useMutation({
     mutationFn: ({ id, status }: { id: number; status: StatusPedido }) =>
       pedidosDb.atualizarStatus(id, status),
     onSuccess: (_, { id, status }) => {
-      setPedidos(prev => prev.map(p => p.id === id ? { ...p, status } : p))
+      setPedidos(prev => {
+        if (['finalizado', 'devolvido'].includes(status)) {
+          return prev.filter(p => p.id !== id)
+        }
+        return prev.map(p => p.id === id ? { ...p, status } : p)
+      })
       toast.success(`Status atualizado → ${status}`)
+      // Força atualização imediata
+      setTimeout(() => refetch(), 500)
     },
     onError: (err: Error) => toast.error(err.message)
   })
 
   const porStatus = (status: StatusPedido) =>
-    pedidos.filter(p => p.status === status).sort(
-      (a, b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime()
-    )
+    pedidos
+      .filter(p => p.status === status)
+      .sort((a, b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
 
-  if (isLoading) return (
+  if (isLoading && !pedidos.length) return (
     <div className="flex items-center justify-center h-full">
       <Spinner size="lg" />
     </div>
@@ -100,42 +118,42 @@ export function KanbanPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 h-12 border-b border-gray-800 bg-gray-900 flex-shrink-0">
         <h1 className="font-semibold text-gray-100 text-sm">Kanban de Pedidos</h1>
-        <span className="text-xs text-gray-500">{pedidos.length} pedidos ativos</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-xs text-green-400">Atualizando a cada 10s</span>
+          </div>
+          <span className="text-xs text-gray-500">{pedidos.length} pedidos ativos</span>
+          <button onClick={() => refetch()} className="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 px-2 py-1 rounded">
+            ↻ Atualizar
+          </button>
+        </div>
       </div>
 
-      {/* Colunas */}
       <div className="flex gap-3 p-3 overflow-x-auto flex-1">
         {COLUNAS.map(col => (
           <div key={col.status}
-            className={clsx('flex-shrink-0 w-72 bg-gray-900 rounded-xl border border-gray-800 border-t-2 flex flex-col', col.cor)}
-          >
-            {/* Header coluna */}
+            className={clsx('flex-shrink-0 w-72 bg-gray-900 rounded-xl border border-gray-800 border-t-2 flex flex-col', col.cor)}>
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
               <span className="text-sm font-medium text-gray-300">{col.label}</span>
               <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
                 {porStatus(col.status).length}
               </span>
             </div>
-
-            {/* Cards */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-2 kanban-col">
-              {porStatus(col.status).length === 0 ? (
-                <div className="flex items-center justify-center py-12 text-gray-700 text-sm">
-                  Vazio
-                </div>
-              ) : (
-                porStatus(col.status).map(pedido => (
-                  <KanbanCard
-                    key={pedido.id}
-                    pedido={pedido}
-                    acoes={col.acoes}
-                    onMudar={(status) => mudarStatus({ id: pedido.id, status })}
-                  />
-                ))
-              )}
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              {porStatus(col.status).length === 0
+                ? <div className="flex items-center justify-center py-12 text-gray-700 text-sm">Vazio</div>
+                : porStatus(col.status).map(pedido => (
+                    <KanbanCard
+                      key={pedido.id}
+                      pedido={pedido}
+                      acoes={col.acoes}
+                      onMudar={(status) => mudarStatus({ id: pedido.id, status })}
+                    />
+                  ))
+              }
             </div>
           </div>
         ))}
@@ -144,11 +162,10 @@ export function KanbanPage() {
   )
 }
 
-// ============================================================
-// KANBAN CARD
-// ============================================================
 function KanbanCard({ pedido, acoes, onMudar }: {
-  pedido: any; acoes: any[]; onMudar: (status: StatusPedido) => void
+  pedido: any
+  acoes: { label: string; prox: StatusPedido; variant?: string }[]
+  onMudar: (status: StatusPedido) => void
 }) {
   const minutos = Math.floor((Date.now() - new Date(pedido.data_criacao).getTime()) / 60000)
   const atrasado = ['fazendo', 'solicitado'].includes(pedido.status) && minutos > 30
@@ -159,23 +176,22 @@ function KanbanCard({ pedido, acoes, onMudar }: {
     if (!win) return
     win.document.write(gerarHTMLProducao(pedido))
     win.document.close()
-    win.print()
+    setTimeout(() => win.print(), 500)
   }
 
   return (
     <div className={clsx(
-      'bg-gray-800/80 rounded-xl border p-3 space-y-2.5 card-novo transition-all',
+      'bg-gray-800/80 rounded-xl border p-3 space-y-2.5 transition-all',
       atrasado ? 'border-red-800/60 alert-pulse' : 'border-gray-700/50'
     )}>
-      {/* Linha 1: número + tempo */}
       <div className="flex items-start justify-between gap-2">
         <div>
           <span className="font-bold text-gray-100 text-lg leading-none">#{pedido.id}</span>
           {pedido.tipo?.includes('delivery') && (
-            <span className="ml-2 badge bg-blue-900/40 text-blue-400 border border-blue-800/40">🛵 Delivery</span>
+            <span className="ml-2 badge bg-blue-900/40 text-blue-400 border border-blue-800/40">🛵</span>
           )}
           {pedido.origem === 'whatsapp' && (
-            <span className="ml-1 badge bg-green-900/40 text-green-400 border border-green-800/40">📱 WA</span>
+            <span className="ml-1 badge bg-green-900/40 text-green-400 border border-green-800/40">📱</span>
           )}
         </div>
         <div className={clsx('text-xs flex items-center gap-1', atrasado ? 'text-red-400 font-medium' : 'text-gray-500')}>
@@ -184,14 +200,10 @@ function KanbanCard({ pedido, acoes, onMudar }: {
         </div>
       </div>
 
-      {/* Cliente */}
       {pedido.cliente && (
-        <p className="text-sm text-gray-300 font-medium leading-none">
-          👤 {pedido.cliente.nome}
-        </p>
+        <p className="text-sm text-gray-300 font-medium leading-none">👤 {pedido.cliente.nome}</p>
       )}
 
-      {/* Itens */}
       <div className="space-y-1">
         {(pedido.itens_pedido || []).map((item: any, i: number) => (
           <div key={i} className="text-xs text-gray-400 flex gap-1.5">
@@ -210,41 +222,30 @@ function KanbanCard({ pedido, acoes, onMudar }: {
         ))}
       </div>
 
-      {/* Obs geral */}
       {pedido.observacao && (
         <p className="text-xs text-yellow-400 bg-yellow-900/20 rounded px-2 py-1 border border-yellow-900/30">
           💬 {pedido.observacao}
         </p>
       )}
 
-      {/* Total + forma pagamento */}
       <div className="flex items-center justify-between text-xs">
         <span className="text-gray-500">{pedido.forma_pagamento || '—'}</span>
-        <span className="font-bold text-gray-200">
-          R$ {Number(pedido.valor_total).toFixed(2)}
-        </span>
+        <span className="font-bold text-gray-200">R$ {Number(pedido.valor_total).toFixed(2)}</span>
       </div>
 
-      {/* Ações */}
       <div className="flex gap-1.5 flex-wrap pt-0.5">
-        <button
-          onClick={imprimirProducao}
-          className="btn-ghost p-1.5 text-gray-600 hover:text-gray-300"
-          title="Imprimir comanda de produção"
-        >
+        <button onClick={imprimirProducao}
+          className="btn-ghost p-1.5 text-gray-600 hover:text-gray-300" title="Imprimir comanda">
           <Printer size={14} />
         </button>
         {acoes.map(acao => (
-          <button
-            key={acao.prox}
-            onClick={() => onMudar(acao.prox)}
+          <button key={acao.prox} onClick={() => onMudar(acao.prox)}
             className={clsx(
               'flex-1 text-xs py-1.5 px-2 rounded-lg font-medium transition-all flex items-center justify-center gap-1',
               acao.variant === 'danger'
                 ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-900/30'
                 : 'bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20'
-            )}
-          >
+            )}>
             {acao.label}
             {acao.variant !== 'danger' && <ChevronRight size={11} />}
           </button>
@@ -254,9 +255,6 @@ function KanbanCard({ pedido, acoes, onMudar }: {
   )
 }
 
-// ============================================================
-// GERADOR DE HTML PARA IMPRESSÃO DE PRODUÇÃO
-// ============================================================
 function gerarHTMLProducao(pedido: any): string {
   const itens = (pedido.itens_pedido || []).map((item: any) => {
     let desc = ''

@@ -14,7 +14,8 @@ export function CozinhaPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['pedidos-cozinha'],
     queryFn: pedidosDb.listarAtivos,
-    refetchInterval: 20_000,
+    refetchInterval: 10_000,
+refetchIntervalInBackground: true,
   })
 
   useEffect(() => { if (data) setPedidos(data) }, [data])
