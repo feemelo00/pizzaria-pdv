@@ -268,7 +268,7 @@ export const bordasDb = {
 // ============================================================
 export const pedidosDb = {
   listarAtivos: async () => {
-    const { data } = await supabase.from('pedidos')
+    const { data, error } = await supabase.from('pedidos')
       .select(`*, cliente:clientes(nome, telefone, condominio:condominios(nome)),
                condominio:condominios(nome, valor_frete), motoboy:motoboys(nome),
                itens_pedido(*, pizza:pizzas(nome,preco), pizza_metade_1:pizzas!pizza_metade_1_id(nome,preco),
@@ -277,6 +277,7 @@ export const pedidosDb = {
                adicionais_item(*, ingrediente:ingredientes(nome, preco_adicional)))`)
       .in('status', ['solicitado','fazendo','pronto','delivery','balcao'])
       .order('data_criacao', { ascending: true })
+    console.log('pedidos ativos:', data, 'erro:', error)
     return data ?? []
   },
   listar: async (filtros?: { data?: string; status?: string; clienteTelefone?: string }) => {
