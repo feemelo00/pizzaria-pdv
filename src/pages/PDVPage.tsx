@@ -359,6 +359,7 @@ function ModalPizza({ pizza, todasPizzas, onClose }: {
   const [adicionais, setAdicionais] = useState<ItemCarrinho['adicionais']>([])
   const [obs, setObs] = useState('')
   const [qtd, setQtd] = useState(1)
+  const [adicionaisConfig, setAdicionaisConfig] = useState<Record<number, {unidade: string, quantidade: string}>>({})
 
   const { data: bordas = [] }     = useQuery({ queryKey: ['bordas'], queryFn: bordasDb.listar })
   const { data: ingsAdic = [] }   = useQuery({ queryKey: ['adicionais'], queryFn: ingredientesDb.listarAdicionais })
@@ -373,13 +374,22 @@ function ModalPizza({ pizza, todasPizzas, onClose }: {
   const totalAdicionais = adicionais.reduce((a, ad) => a + ad.valor * ad.quantidade, 0)
   const precoTotal = (calcPreco() + totalAdicionais) * qtd
 
-  const toggleAdicional = (ing: Ingrediente, aplicado_em: 'inteira'|'metade_1'|'metade_2') => {
-    const key = `${ing.id}-${aplicado_em}`
-    const existe = adicionais.find(a => `${a.ingrediente_id}-${a.aplicado_em}` === key)
-    if (existe) setAdicionais(prev => prev.filter(a => `${a.ingrediente_id}-${a.aplicado_em}` !== key))
-    else setAdicionais(prev => [...prev, { ingrediente_id: ing.id, nome: ing.nome, quantidade: ing.quantidade_adicional || 1, aplicado_em, valor: Number(ing.preco_adicional) }])
+  const toggleAdicionalComQtd = (ing: Ingrediente, aplicado_em: 'inteira'|'metade_1'|'metade_2', qtd: number) => {
+  const existe = adicionais.find(a => a.ingrediente_id === ing.id && a.aplicado_em === aplicado_em)
+  if (existe) {
+    setAdicionais(prev => prev.filter(a => !(a.ingrediente_id === ing.id && a.aplicado_em === aplicado_em)))
+  } else {
+    setAdicionais(prev => [...prev, {
+      ingrediente_id: ing.id,
+      nome: ing.nome,
+      quantidade: qtd,
+      aplicado_em,
+      valor: Number(ing.preco_adicional)
+    }])
   }
-  const isSelected = (id: number, em: string) => adicionais.some(a => a.ingrediente_id === id && a.aplicado_em === em)
+}
+const isSelected = (id: number, em: string) =>
+  adicionais.some(a => a.ingrediente_id === id && a.aplicado_em === em)
 
   const confirmar = () => {
     if (modo === 'meio' && !sabor2) { toast.error('Selecione o 2º sabor'); return }
@@ -472,29 +482,104 @@ function ModalPizza({ pizza, todasPizzas, onClose }: {
           <div>
             <label className="label">Adicionais</label>
             <div className="space-y-1.5">
-              {(ingsAdic as Ingrediente[]).map(ing => (
-                <div key={ing.id} className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 flex-1">{ing.nome}</span>
-                  <span className="text-xs text-gray-600">+R${Number(ing.preco_adicional).toFixed(2)}</span>
-                  {modo === 'meio' ? (
-                    <div className="flex gap-1">
-                      {(['metade_1','metade_2','inteira'] as const).map(em => (
-                        <button key={em} onClick={() => toggleAdicional(ing, em)}
-                          className={clsx('px-2 py-0.5 text-xs rounded border transition-all',
-                            isSelected(ing.id, em) ? 'bg-pizza-500/30 border-pizza-500/50 text-pizza-300' : 'border-gray-700 text-gray-600 hover:border-gray-600'
-                          )}>
-                          {em === 'metade_1' ? '½1' : em === 'metade_2' ? '½2' : 'Toda'}
-                        </button>
-                      ))}
+              {(ingsAdic as Ingrediente[]).map((ing: Ingrediente) => {
+                const unidadeEstoque = ing.unidade || 'g'
+                const unidadesCompativeis: Record<string, string[]> = {
+                  'kg': ['g', 'kg'], 'g': ['g', 'kg'],
+                  'l': ['ml', 'l'], 'ml': ['ml', 'l'],
+                  'unidade': ['unidade'],
+                }
+                const opcoes = unidadesCompativeis[unidadeEstoque] || [unidadeEstoque]
+
+                const converter = (valor: number, de: string, para: string): number => {
+                  if (de === para) return valor
+                  if (de === 'g'  && para === 'kg') return valor / 1000
+                  if (de === 'kg' && para === 'g')  return valor * 1000
+                  if (de === 'ml' && para === 'l')  return valor / 1000
+                  if (de === 'l'  && para === 'ml') return valor * 1000
+                  return valor
+                }
+
+                const estadoAtual = adicionaisConfig[ing.id] || { unidade: opcoes[0], quantidade: '' }
+
+                const selecionados = modo === 'meio'
+                  ? (['metade_1','metade_2','inteira'] as const).filter(em => isSelected(ing.id, em))
+                  : isSelected(ing.id, 'inteira') ? ['inteira'] : []
+
+                return (
+                  <div key={ing.id} className="bg-gray-800/50 rounded-lg p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm text-gray-300 font-medium">{ing.nome}</span>
+                        <span className="text-xs text-gray-500 ml-2">
+                          estoque em <strong className="text-gray-400">{unidadeEstoque}</strong>
+                        </span>
+                      </div>
+                      <span className="text-xs text-pizza-400">+R${Number(ing.preco_adicional).toFixed(2)}</span>
                     </div>
-                  ) : (
-                    <button onClick={() => toggleAdicional(ing, 'inteira')}
-                      className={clsx('px-3 py-0.5 text-xs rounded border transition-all',
-                        isSelected(ing.id, 'inteira') ? 'bg-pizza-500/30 border-pizza-500/50 text-pizza-300' : 'border-gray-700 text-gray-600 hover:border-gray-600'
-                      )}>+ Adicionar</button>
-                  )}
-                </div>
-              ))}
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select
+                        value={estadoAtual.unidade}
+                        onChange={e => setAdicionaisConfig((prev: any) => ({
+                          ...prev, [ing.id]: { ...estadoAtual, unidade: e.target.value }
+                        }))}
+                        className="bg-gray-700 border border-gray-600 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none">
+                        {opcoes.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                      <input
+                        type="number" step="1" min="0"
+                        value={estadoAtual.quantidade}
+                        placeholder={`qtd em ${estadoAtual.unidade}`}
+                        onChange={e => setAdicionaisConfig((prev: any) => ({
+                          ...prev, [ing.id]: { ...estadoAtual, quantidade: e.target.value }
+                        }))}
+                        className="w-24 bg-gray-700 border border-gray-600 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none" />
+                      {estadoAtual.quantidade && (
+                        <span className="text-xs text-gray-500">
+                          = {converter(Number(estadoAtual.quantidade), estadoAtual.unidade, unidadeEstoque).toFixed(4)} {unidadeEstoque}
+                        </span>
+                      )}
+                    </div>
+
+                    {modo === 'meio' ? (
+                      <div className="flex gap-1 flex-wrap">
+                        {(['metade_1','metade_2','inteira'] as const).map(em => (
+                          <button key={em} onClick={() => {
+                            const qtdConvertida = converter(
+                              Number(estadoAtual.quantidade || ing.quantidade_adicional || 1),
+                              estadoAtual.unidade, unidadeEstoque
+                            )
+                            toggleAdicionalComQtd(ing, em, qtdConvertida)
+                          }}
+                            className={clsx('px-2 py-1 text-xs rounded border transition-all',
+                              isSelected(ing.id, em)
+                                ? 'bg-pizza-500/30 border-pizza-500/50 text-pizza-300'
+                                : 'border-gray-700 text-gray-600 hover:border-gray-600'
+                            )}>
+                            {em === 'metade_1' ? '½1' : em === 'metade_2' ? '½2' : 'Toda'}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <button onClick={() => {
+                        const qtdConvertida = converter(
+                          Number(estadoAtual.quantidade || ing.quantidade_adicional || 1),
+                          estadoAtual.unidade, unidadeEstoque
+                        )
+                        toggleAdicionalComQtd(ing, 'inteira', qtdConvertida)
+                      }}
+                        className={clsx('w-full py-1 text-xs rounded border transition-all',
+                          isSelected(ing.id, 'inteira')
+                            ? 'bg-pizza-500/30 border-pizza-500/50 text-pizza-300'
+                            : 'border-gray-700 text-gray-600 hover:border-gray-600'
+                        )}>
+                        {isSelected(ing.id, 'inteira') ? '✓ Adicionado' : '+ Adicionar'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

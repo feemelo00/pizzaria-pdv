@@ -30,7 +30,14 @@ export function PizzasPage() {
     const id = Number(e.target.value)
     if (!id || ings.find(i => i.ingrediente_id === id)) return
     const ing = (ingredientes as any[]).find(i => i.id === id)
-    setIngs(prev => [...prev, { ingrediente_id: id, nome: ing?.nome || '', quantidade: '1' }])
+    setIngs(prev => [...prev, {
+      ingrediente_id: id,
+      nome: ing?.nome || '',
+      unidadeEstoque: ing?.unidade || 'g',
+      unidadeDigitada: ing?.unidade || 'g',
+      quantidadeDigitada: '',
+      quantidade: '0'
+    }])
     e.target.value = ''
   }
 
@@ -93,15 +100,74 @@ export function PizzasPage() {
               {(ingredientes as any[]).map(i => <option key={i.id} value={i.id}>{i.nome} ({i.unidade})</option>)}
             </select>
             <div className="space-y-1.5">
-              {ings.map((ing, idx) => (
-                <div key={ing.ingrediente_id} className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-2">
-                  <span className="text-sm text-gray-300 flex-1">{ing.nome}</span>
-                  <input type="number" step="0.001" value={ing.quantidade}
-                    onChange={e => setIngs(prev => prev.map((i, j) => j === idx ? { ...i, quantidade: e.target.value } : i))}
-                    className="w-20 bg-gray-700 border border-gray-600 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none" />
-                  <button onClick={() => setIngs(prev => prev.filter((_, j) => j !== idx))} className="text-gray-600 hover:text-red-400"><X size={13} /></button>
-                </div>
-              ))}
+              {ings.map((ing, idx) => {
+                const unidadeEstoque = (ing as any).unidadeEstoque || 'g'
+                const unidadeDigitada = (ing as any).unidadeDigitada || unidadeEstoque
+
+                const unidadesCompativeis: Record<string, string[]> = {
+                  'kg':      ['kg', 'g'],
+                  'g':       ['g', 'kg'],
+                  'l':       ['l', 'ml'],
+                  'ml':      ['ml', 'l'],
+                  'unidade': ['unidade'],
+                }
+                const opcoesUnidade = unidadesCompativeis[unidadeEstoque] || [unidadeEstoque]
+
+                const converter = (valor: number, de: string, para: string): number => {
+                  if (de === para) return valor
+                  if (de === 'g'  && para === 'kg') return valor / 1000
+                  if (de === 'kg' && para === 'g')  return valor * 1000
+                  if (de === 'ml' && para === 'l')  return valor / 1000
+                  if (de === 'l'  && para === 'ml') return valor * 1000
+                  return valor
+                }
+
+                return (
+                  <div key={ing.ingrediente_id} className="bg-gray-800/50 rounded-lg px-3 py-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-300">{ing.nome}</span>
+                      <button onClick={() => setIngs(prev => prev.filter((_, j) => j !== idx))}
+                        className="text-gray-600 hover:text-red-400"><X size={13} /></button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-gray-600 mb-0.5">Estoque em: <strong className="text-gray-400">{unidadeEstoque}</strong></span>
+                        <span className="text-xs text-gray-600">Digitar em:</span>
+                      </div>
+                      <select
+                        value={unidadeDigitada}
+                        onChange={e => {
+                          const novaUnidade = e.target.value
+                          const qtdAtual = Number((ing as any).quantidadeDigitada || 0)
+                          const emEstoque = converter(qtdAtual, novaUnidade, unidadeEstoque)
+                          setIngs(prev => prev.map((i, j) => j === idx
+                            ? { ...i, unidadeDigitada: novaUnidade, quantidade: String(emEstoque) }
+                            : i))
+                        }}
+                        className="bg-gray-700 border border-gray-600 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none">
+                        {opcoesUnidade.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                      <input
+                        type="number" step="0.001" min="0"
+                        value={(ing as any).quantidadeDigitada || ''}
+                        placeholder={`qtd em ${unidadeDigitada}`}
+                        onChange={e => {
+                          const val = e.target.value
+                          const emEstoque = converter(Number(val), unidadeDigitada, unidadeEstoque)
+                          setIngs(prev => prev.map((i, j) => j === idx
+                            ? { ...i, quantidadeDigitada: val, quantidade: String(emEstoque) }
+                            : i))
+                        }}
+                        className="w-24 bg-gray-700 border border-gray-600 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none" />
+                      {(ing as any).quantidadeDigitada && (
+                        <span className="text-xs text-gray-500">
+                          = {Number(ing.quantidade).toFixed(4)} {unidadeEstoque}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
           <div className="flex gap-2 pt-2">
