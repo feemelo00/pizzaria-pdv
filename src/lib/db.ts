@@ -268,18 +268,33 @@ export const bordasDb = {
 // ============================================================
 export const pedidosDb = {
   listarAtivos: async () => {
-    const { data, error } = await supabase.from('pedidos')
-      .select(`*, cliente:clientes(nome, telefone, condominio:condominios(nome)),
-               condominio:condominios(nome, valor_frete), motoboy:motoboys(nome),
-               itens_pedido(*, pizza:pizzas(nome,preco), pizza_metade_1:pizzas!pizza_metade_1_id(nome,preco),
-               pizza_metade_2:pizzas!pizza_metade_2_id(nome,preco), bebida:bebidas(nome),
-               outro:outros_produtos(nome), borda:bordas(nome, preco),
-               adicionais_item(*, ingrediente:ingredientes(nome, preco_adicional)))`)
-      .in('status', ['solicitado','fazendo','pronto','delivery','balcao'])
-      .order('data_criacao', { ascending: true })
-    console.log('pedidos ativos:', data, 'erro:', error)
-    return data ?? []
-  },
+  const { data, error } = await supabase.from('pedidos')
+    .select(`
+      *,
+      cliente:clientes(nome, telefone, quadra, lote,
+        condominio:condominios(nome, valor_frete)
+      ),
+      condominio:condominios(nome, valor_frete),
+      motoboy:motoboys(nome),
+      itens_pedido(
+        *,
+        pizza:pizzas!itens_pedido_pizza_id_fkey(id, nome, preco),
+        pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(id, nome, preco),
+        pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(id, nome, preco),
+        bebida:bebidas(id, nome),
+        outro:outros_produtos(id, nome),
+        borda:bordas(id, nome, preco),
+        adicionais_item(
+          *,
+          ingrediente:ingredientes(id, nome, preco_adicional)
+        )
+      )
+    `)
+    .in('status', ['solicitado','fazendo','pronto','delivery','balcao'])
+    .order('data_criacao', { ascending: true })
+  console.log('pedidos ativos:', data, 'erro:', error)
+  return data ?? []
+},
   listar: async (filtros?: { data?: string; status?: string; clienteTelefone?: string }) => {
     let q = supabase.from('pedidos')
       .select(`*, cliente:clientes(nome, telefone), motoboy:motoboys(nome)`)
@@ -291,16 +306,29 @@ export const pedidosDb = {
     return data ?? []
   },
   buscarPorId: async (id: number) => {
-    const { data } = await supabase.from('pedidos')
-      .select(`*, cliente:clientes(*, condominio:condominios(*)), condominio:condominios(*),
-               motoboy:motoboys(*), itens_pedido(*, pizza:pizzas(*),
-               pizza_metade_1:pizzas!pizza_metade_1_id(*), pizza_metade_2:pizzas!pizza_metade_2_id(*),
-               bebida:bebidas(*), outro:outros_produtos(*), borda:bordas(*),
-               adicionais_item(*, ingrediente:ingredientes(*))),
-               pagamentos(*), entregas(*, motoboy:motoboys(*))`)
-      .eq('id', id).single()
-    return data
-  },
+  const { data } = await supabase.from('pedidos')
+    .select(`
+      *,
+      cliente:clientes(*, condominio:condominios(*)),
+      condominio:condominios(*),
+      motoboy:motoboys(*),
+      itens_pedido(
+        *,
+        pizza:pizzas!itens_pedido_pizza_id_fkey(*),
+        pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(*),
+        pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(*),
+        bebida:bebidas(*),
+        outro:outros_produtos(*),
+        borda:bordas(*),
+        adicionais_item(*, ingrediente:ingredientes(*))
+      ),
+      pagamentos(*),
+      entregas(*, motoboy:motoboys(*))
+    `)
+    .eq('id', id)
+    .single()
+  return data
+},
   criar: async (pedidoData: any, itens: any[]) => {
     // Cria pedido
     const { data: pedido, error } = await supabase
