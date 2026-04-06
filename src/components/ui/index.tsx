@@ -14,7 +14,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
          onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       <div className={clsx('relative bg-gray-900 border border-gray-700 rounded-2xl w-full shadow-2xl', sizes[size])}>
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
           <h2 className="font-semibold text-gray-100">{title}</h2>
