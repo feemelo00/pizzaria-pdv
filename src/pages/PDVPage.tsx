@@ -115,79 +115,92 @@ export function PDVPage() {
         </div>
 
         {/* Abas cardápio + busca */}
-        <div className="flex items-center border-b border-gray-800 bg-gray-900 flex-shrink-0 gap-2 pr-3">
-          <div className="flex gap-0">
-            {(['pizzas','bebidas','outros'] as const).map(a => (
-              <button key={a} onClick={() => { setAba(a); setBusca('') }}
-                className={clsx('px-5 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize',
-                  aba === a ? 'border-pizza-500 text-pizza-400' : 'border-transparent text-gray-500 hover:text-gray-300'
-                )}>
-                {a === 'pizzas' ? '🍕 Pizzas' : a === 'bebidas' ? '🥤 Bebidas' : '🍟 Outros'}
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 relative max-w-xs">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
-            <input
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-              placeholder="Buscar..."
-              className="input pl-8 py-1.5 text-xs h-8"
-            />
-            {busca && (
-              <button onClick={() => setBusca('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
-                <X size={13} />
-              </button>
-            )}
-          </div>
+      <div className="flex items-center border-b border-gray-800 bg-gray-900 flex-shrink-0 gap-2 pr-3">
+        <div className="flex gap-0">
+          {(['pizzas','bebidas','outros'] as const).map(a => (
+            <button key={a} onClick={() => { setAba(a); setBusca('') }}
+              className={clsx('px-5 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize',
+                aba === a ? 'border-pizza-500 text-pizza-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+              )}>
+              {a === 'pizzas' ? '🍕 Pizzas' : a === 'bebidas' ? '🥤 Bebidas' : '🍟 Outros'}
+            </button>
+          ))}
         </div>
+        <div className="flex-1 relative max-w-xs">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
+          <input
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar..."
+            className="input pl-8 py-1.5 text-xs h-8"
+          />
+          {busca && (
+            <button onClick={() => setBusca('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      </div>
 
         {/* Grid produtos */}
         <div className="flex-1 overflow-y-auto p-3">
           {aba === 'pizzas' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(pizzas as Pizza[]).map(p => (
-                <CardProduto key={p.id} nome={p.nome} sub={p.tamanho} preco={p.preco}
-                  onClick={() => setPizzaModal(p)} />
-              ))}
-              {!pizzas.length && <div className="col-span-4"><Empty icon="🍕" title="Nenhuma pizza disponível" desc="Verifique o estoque de ingredientes" /></div>}
+              {(pizzas as Pizza[])
+                .filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase()))
+                .map(p => (
+                  <CardProduto key={p.id} nome={p.nome} sub={p.tamanho} preco={p.preco}
+                    onClick={() => setPizzaModal(p)} />
+                ))}
+              {!(pizzas as Pizza[]).filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase())).length && (
+                <div className="col-span-4">
+                  <Empty icon="🍕" title={busca ? `Nenhuma pizza encontrada para "${busca}"` : 'Nenhuma pizza disponível'} desc={busca ? 'Tente outro termo' : 'Verifique o estoque de ingredientes'} />
+                </div>
+              )}
             </div>
           )}
           {aba === 'bebidas' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(bebidas as Bebida[]).map(b => (
-                <CardProduto key={b.id} nome={b.nome} sub={b.tamanho || ''} preco={b.preco}
-                  onClick={() => {
-                    carrinho.adicionarItem({
-                      _id: crypto.randomUUID(), tipo_item: 'bebida',
-                      bebida_id: b.id, bebida_nome: b.nome,
-                      quantidade: 1, valor_unitario: Number(b.preco), adicionais: []
-                    })
-                    toast.success(`${b.nome} adicionado`, { duration: 1500 })
-                  }} />
-              ))}
-              {!bebidas.length && <Empty icon="🥤" title="Nenhuma bebida disponível" />}
+              {(bebidas as Bebida[])
+                .filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase()))
+                .map(b => (
+                  <CardProduto key={b.id} nome={b.nome} sub={b.tamanho || ''} preco={b.preco}
+                    onClick={() => {
+                      carrinho.adicionarItem({
+                        _id: crypto.randomUUID(), tipo_item: 'bebida',
+                        bebida_id: b.id, bebida_nome: b.nome,
+                        quantidade: 1, valor_unitario: Number(b.preco), adicionais: []
+                      })
+                      toast.success(`${b.nome} adicionado`, { duration: 1500 })
+                    }} />
+                ))}
+              {!(bebidas as Bebida[]).filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase())).length && (
+                <Empty icon="🥤" title={busca ? `Nenhuma bebida encontrada para "${busca}"` : 'Nenhuma bebida disponível'} />
+              )}
             </div>
           )}
           {aba === 'outros' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(outros as OutroProduto[]).map(o => (
-                <CardProduto key={o.id} nome={o.nome} sub={o.tamanho || ''} preco={o.preco}
-                  onClick={() => {
-                    carrinho.adicionarItem({
-                      _id: crypto.randomUUID(), tipo_item: 'outro',
-                      outro_id: o.id, outro_nome: o.nome,
-                      quantidade: 1, valor_unitario: Number(o.preco), adicionais: []
-                    })
-                    toast.success(`${o.nome} adicionado`, { duration: 1500 })
-                  }} />
-              ))}
-              {!outros.length && <Empty icon="🍟" title="Nenhum item disponível" />}
+              {(outros as OutroProduto[])
+                .filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase()))
+                .map(o => (
+                  <CardProduto key={o.id} nome={o.nome} sub={o.tamanho || ''} preco={o.preco}
+                    onClick={() => {
+                      carrinho.adicionarItem({
+                        _id: crypto.randomUUID(), tipo_item: 'outro',
+                        outro_id: o.id, outro_nome: o.nome,
+                        quantidade: 1, valor_unitario: Number(o.preco), adicionais: []
+                      })
+                      toast.success(`${o.nome} adicionado`, { duration: 1500 })
+                    }} />
+                ))}
+              {!(outros as OutroProduto[]).filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase())).length && (
+                <Empty icon="🍟" title={busca ? `Nenhum item encontrado para "${busca}"` : 'Nenhum item disponível'} />
+              )}
             </div>
           )}
         </div>
-      </div>
 
       {/* ── Carrinho direito ── */}
       <div className="w-72 xl:w-80 flex-shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col">
