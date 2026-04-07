@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { pizzasDb, bebidasDb, outrosDb, bordasDb, ingredientesDb, clientesDb, condominiosDb, pedidosDb } from '../lib/db'
 import { useCarrinhoStore, type ItemCarrinho } from '../store/carrinhoStore'
@@ -21,6 +21,37 @@ const FORMAS_PAG = [
   { value: 'debito',   label: '💳 Débito' },
   { value: 'vr',       label: '🍽️ VR' },
 ]
+
+// Pizzas filtradas
+const pizzasFiltradas = useMemo(() => {
+  console.log('Buscando por:', busca)
+  console.log('Total de pizzas:', pizzas?.length)
+  if (!busca) return pizzas || []
+  const termo = busca.toLowerCase().trim()
+  const resultado = (pizzas || []).filter(p => 
+    p.nome?.toLowerCase().includes(termo)
+  )
+  console.log('Pizzas encontradas:', resultado.length)
+  return resultado
+}, [pizzas, busca])
+
+// Bebidas filtradas
+const bebidasFiltradas = useMemo(() => {
+  if (!busca) return bebidas || []
+  const termo = busca.toLowerCase().trim()
+  return (bebidas || []).filter(b => 
+    b.nome?.toLowerCase().includes(termo)
+  )
+}, [bebidas, busca])
+
+// Outros filtrados
+const outrosFiltrados = useMemo(() => {
+  if (!busca) return outros || []
+  const termo = busca.toLowerCase().trim()
+  return (outros || []).filter(o => 
+    o.nome?.toLowerCase().includes(termo)
+  )
+}, [outros, busca])
 
 export function PDVPage() {
   const [aba, setAba] = useState<'pizzas'|'bebidas'|'outros'>('pizzas')
@@ -147,13 +178,11 @@ export function PDVPage() {
         <div className="flex-1 overflow-y-auto p-3">
           {aba === 'pizzas' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(pizzas as Pizza[])
-                .filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase()))
-                .map(p => (
-                  <CardProduto key={p.id} nome={p.nome} sub={p.tamanho} preco={p.preco}
-                    onClick={() => setPizzaModal(p)} />
-                ))}
-              {!(pizzas as Pizza[]).filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase())).length && (
+              {pizzasFiltradas.map(p => (
+                <CardProduto key={p.id} nome={p.nome} sub={p.tamanho} preco={p.preco}
+                  onClick={() => setPizzaModal(p)} />
+              ))}
+              {pizzasFiltradas.length === 0 && (
                 <div className="col-span-4">
                   <Empty icon="🍕" title={busca ? `Nenhuma pizza encontrada para "${busca}"` : 'Nenhuma pizza disponível'} desc={busca ? 'Tente outro termo' : 'Verifique o estoque de ingredientes'} />
                 </div>
@@ -162,40 +191,36 @@ export function PDVPage() {
           )}
           {aba === 'bebidas' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(bebidas as Bebida[])
-                .filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase()))
-                .map(b => (
-                  <CardProduto key={b.id} nome={b.nome} sub={b.tamanho || ''} preco={b.preco}
-                    onClick={() => {
-                      carrinho.adicionarItem({
-                        _id: crypto.randomUUID(), tipo_item: 'bebida',
-                        bebida_id: b.id, bebida_nome: b.nome,
-                        quantidade: 1, valor_unitario: Number(b.preco), adicionais: []
-                      })
-                      toast.success(`${b.nome} adicionado`, { duration: 1500 })
-                    }} />
-                ))}
-              {!(bebidas as Bebida[]).filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase())).length && (
+              {bebidasFiltradas.map(b => (
+                <CardProduto key={b.id} nome={b.nome} sub={b.tamanho || ''} preco={b.preco}
+                  onClick={() => {
+                    carrinho.adicionarItem({
+                      _id: crypto.randomUUID(), tipo_item: 'bebida',
+                      bebida_id: b.id, bebida_nome: b.nome,
+                      quantidade: 1, valor_unitario: Number(b.preco), adicionais: []
+                    })
+                    toast.success(`${b.nome} adicionado`, { duration: 1500 })
+                  }} />
+              ))}
+              {bebidasFiltradas.length === 0 && (
                 <Empty icon="🥤" title={busca ? `Nenhuma bebida encontrada para "${busca}"` : 'Nenhuma bebida disponível'} />
               )}
             </div>
           )}
           {aba === 'outros' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(outros as OutroProduto[])
-                .filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase()))
-                .map(o => (
-                  <CardProduto key={o.id} nome={o.nome} sub={o.tamanho || ''} preco={o.preco}
-                    onClick={() => {
-                      carrinho.adicionarItem({
-                        _id: crypto.randomUUID(), tipo_item: 'outro',
-                        outro_id: o.id, outro_nome: o.nome,
-                        quantidade: 1, valor_unitario: Number(o.preco), adicionais: []
-                      })
-                      toast.success(`${o.nome} adicionado`, { duration: 1500 })
-                    }} />
-                ))}
-              {!(outros as OutroProduto[]).filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase())).length && (
+              {outrosFiltrados.map(o => (
+                <CardProduto key={o.id} nome={o.nome} sub={o.tamanho || ''} preco={o.preco}
+                  onClick={() => {
+                    carrinho.adicionarItem({
+                      _id: crypto.randomUUID(), tipo_item: 'outro',
+                      outro_id: o.id, outro_nome: o.nome,
+                      quantidade: 1, valor_unitario: Number(o.preco), adicionais: []
+                    })
+                    toast.success(`${o.nome} adicionado`, { duration: 1500 })
+                  }} />
+              ))}
+              {outrosFiltrados.length === 0 && (
                 <Empty icon="🍟" title={busca ? `Nenhum item encontrado para "${busca}"` : 'Nenhum item disponível'} />
               )}
             </div>
