@@ -143,57 +143,40 @@ export function PDVPage() {
         </div>
       </div>
 
-        {/* Grid produtos */}
+        {/* Grid produtos - VERSÃO DE TESTE */}
         <div className="flex-1 overflow-y-auto p-3">
+          
+          {/* TESTE: Mostrar o valor da busca */}
+          <div className="bg-yellow-100 p-2 mb-3 text-black">
+            <strong>DEBUG:</strong> Buscando por: "{busca}"
+          </div>
+          
           {aba === 'pizzas' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {pizzasFiltradas.map(p => (
-                <CardProduto key={p.id} nome={p.nome} sub={p.tamanho} preco={p.preco}
-                  onClick={() => setPizzaModal(p)} />
-              ))}
-              {pizzasFiltradas.length === 0 && (
-                <div className="col-span-4">
-                  <Empty icon="🍕" title={busca ? `Nenhuma pizza encontrada para "${busca}"` : 'Nenhuma pizza disponível'} desc={busca ? 'Tente outro termo' : 'Verifique o estoque de ingredientes'} />
-                </div>
-              )}
+              {/* TESTE: Mostrar quantas pizzas existem */}
+              <div className="col-span-4 bg-blue-100 p-2 text-black mb-2">
+                Total de pizzas: {pizzas?.length || 0}
+              </div>
+              
+              {pizzas && pizzas.map(p => {
+                const matches = !busca || p.nome.toLowerCase().includes(busca.toLowerCase());
+                return (
+                  <div key={p.id} className={`border p-2 ${matches ? 'bg-green-100' : 'bg-red-100 hidden'}`}>
+                    <div><strong>{p.nome}</strong></div>
+                    <div>{p.tamanho}</div>
+                    <div>R$ {p.preco}</div>
+                    <div className="text-xs">
+                      Match: {matches ? 'SIM' : 'NÃO'} | 
+                      Busca: "{busca}" | 
+                      Nome: "{p.nome.toLowerCase()}"
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
-          {aba === 'bebidas' && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {bebidasFiltradas.map(b => (
-                <CardProduto key={b.id} nome={b.nome} sub={b.tamanho || ''} preco={b.preco}
-                  onClick={() => {
-                    carrinho.adicionarItem({
-                      _id: crypto.randomUUID(), tipo_item: 'bebida',
-                      bebida_id: b.id, bebida_nome: b.nome,
-                      quantidade: 1, valor_unitario: Number(b.preco), adicionais: []
-                    })
-                    toast.success(`${b.nome} adicionado`, { duration: 1500 })
-                  }} />
-              ))}
-              {bebidasFiltradas.length === 0 && (
-                <Empty icon="🥤" title={busca ? `Nenhuma bebida encontrada para "${busca}"` : 'Nenhuma bebida disponível'} />
-              )}
-            </div>
-          )}
-          {aba === 'outros' && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {outrosFiltrados.map(o => (
-                <CardProduto key={o.id} nome={o.nome} sub={o.tamanho || ''} preco={o.preco}
-                  onClick={() => {
-                    carrinho.adicionarItem({
-                      _id: crypto.randomUUID(), tipo_item: 'outro',
-                      outro_id: o.id, outro_nome: o.nome,
-                      quantidade: 1, valor_unitario: Number(o.preco), adicionais: []
-                    })
-                    toast.success(`${o.nome} adicionado`, { duration: 1500 })
-                  }} />
-              ))}
-              {outrosFiltrados.length === 0 && (
-                <Empty icon="🍟" title={busca ? `Nenhum item encontrado para "${busca}"` : 'Nenhum item disponível'} />
-              )}
-            </div>
-          )}
+          
+          {/* Faça o mesmo para bebidas e outros se quiser testar */}
         </div>
 
       {/* ── Carrinho direito ── */}
