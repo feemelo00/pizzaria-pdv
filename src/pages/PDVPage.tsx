@@ -281,6 +281,7 @@ export function PDVPage() {
       )}
       <ModalCliente open={clienteModal} onClose={() => setClienteModal(false)} />
     </div>
+  </div>
   )
 }
 
