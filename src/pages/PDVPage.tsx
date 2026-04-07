@@ -26,6 +26,7 @@ export function PDVPage() {
   const [aba, setAba] = useState<'pizzas'|'bebidas'|'outros'>('pizzas')
   const [pizzaModal, setPizzaModal] = useState<Pizza | null>(null)
   const [clienteModal, setClienteModal] = useState(false)
+  const [busca, setBusca] = useState('')
   const carrinho = useCarrinhoStore()
 
   const { data: pizzas = [] }  = useQuery({ queryKey: ['pizzas-disp'], queryFn: pizzasDb.listarDisponiveis })
@@ -113,16 +114,33 @@ export function PDVPage() {
           <BuscaCliente onAbrirModal={() => setClienteModal(true)} />
         </div>
 
-        {/* Abas cardápio */}
-        <div className="flex gap-0 border-b border-gray-800 bg-gray-900 flex-shrink-0">
-          {(['pizzas','bebidas','outros'] as const).map(a => (
-            <button key={a} onClick={() => setAba(a)}
-              className={clsx('px-5 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize',
-                aba === a ? 'border-pizza-500 text-pizza-400' : 'border-transparent text-gray-500 hover:text-gray-300'
-              )}>
-              {a === 'pizzas' ? '🍕 Pizzas' : a === 'bebidas' ? '🥤 Bebidas' : '🍟 Outros'}
-            </button>
-          ))}
+        {/* Abas cardápio + busca */}
+        <div className="flex items-center border-b border-gray-800 bg-gray-900 flex-shrink-0 gap-2 pr-3">
+          <div className="flex gap-0">
+            {(['pizzas','bebidas','outros'] as const).map(a => (
+              <button key={a} onClick={() => { setAba(a); setBusca('') }}
+                className={clsx('px-5 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize',
+                  aba === a ? 'border-pizza-500 text-pizza-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+                )}>
+                {a === 'pizzas' ? '🍕 Pizzas' : a === 'bebidas' ? '🥤 Bebidas' : '🍟 Outros'}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 relative max-w-xs">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
+            <input
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+              placeholder="Buscar..."
+              className="input pl-8 py-1.5 text-xs h-8"
+            />
+            {busca && (
+              <button onClick={() => setBusca('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
+                <X size={13} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Grid produtos */}
