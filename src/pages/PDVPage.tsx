@@ -22,37 +22,6 @@ const FORMAS_PAG = [
   { value: 'vr',       label: '🍽️ VR' },
 ]
 
-// Pizzas filtradas
-const pizzasFiltradas = useMemo(() => {
-  console.log('Buscando por:', busca)
-  console.log('Total de pizzas:', pizzas?.length)
-  if (!busca) return pizzas || []
-  const termo = busca.toLowerCase().trim()
-  const resultado = (pizzas || []).filter(p => 
-    p.nome?.toLowerCase().includes(termo)
-  )
-  console.log('Pizzas encontradas:', resultado.length)
-  return resultado
-}, [pizzas, busca])
-
-// Bebidas filtradas
-const bebidasFiltradas = useMemo(() => {
-  if (!busca) return bebidas || []
-  const termo = busca.toLowerCase().trim()
-  return (bebidas || []).filter(b => 
-    b.nome?.toLowerCase().includes(termo)
-  )
-}, [bebidas, busca])
-
-// Outros filtrados
-const outrosFiltrados = useMemo(() => {
-  if (!busca) return outros || []
-  const termo = busca.toLowerCase().trim()
-  return (outros || []).filter(o => 
-    o.nome?.toLowerCase().includes(termo)
-  )
-}, [outros, busca])
-
 export function PDVPage() {
   const [aba, setAba] = useState<'pizzas'|'bebidas'|'outros'>('pizzas')
   const [pizzaModal, setPizzaModal] = useState<Pizza | null>(null)
@@ -751,3 +720,34 @@ function ModalCliente({ open, onClose }: { open: boolean; onClose: () => void })
     </Modal>
   )
 }
+
+// Pizzas filtradas
+const pizzasFiltradas = useMemo(() => {
+  console.log('Buscando por:', busca)
+  console.log('Total de pizzas:', pizzas?.length)
+  if (!busca) return pizzas || []
+  const termo = busca.toLowerCase().trim()
+  const resultado = (pizzas || []).filter(p => 
+    p.nome?.toLowerCase().includes(termo)
+  )
+  console.log('Pizzas encontradas:', resultado.length)
+  return resultado
+}, [pizzas, busca])
+
+// Bebidas filtradas
+const bebidasFiltradas = useMemo(() => {
+  if (!busca) return bebidas || []
+  const termo = busca.toLowerCase().trim()
+  return (bebidas || []).filter(b => 
+    b.nome?.toLowerCase().includes(termo)
+  )
+}, [bebidas, busca])
+
+// Outros filtrados
+const outrosFiltrados = useMemo(() => {
+  if (!busca) return outros || []
+  const termo = busca.toLowerCase().trim()
+  return (outros || []).filter(o => 
+    o.nome?.toLowerCase().includes(termo)
+  )
+}, [outros, busca])
