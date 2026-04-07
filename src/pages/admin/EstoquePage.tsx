@@ -14,7 +14,7 @@ export function EstoquePage() {
   const [modal, setModal] = useState(false)
   const [modalEntrada, setModalEntrada] = useState<any>(null)
   const [ed, setEd] = useState<any>(null)
-  const [form, setForm] = useState({ nome: '', unidade: 'g', quantidade_estoque: '0', estoque_minimo: '0', permite_adicional: false, quantidade_adicional: '', preco_adicional: '0' })
+  const [form, setForm] = useState({ nome: '', unidade: 'g', quantidade_estoque: '0', estoque_minimo: '0', permite_adicional: false, quantidade_adicional: '', quantidade_adicional_exibida: '', unidade_adicional: '', preco_adicional: '0' })
   const [entrada, setEntrada] = useState({ quantidade: '', motivo: '' })
 
   const { data: ingredientes = [], isLoading } = useQuery({ queryKey: ['ingredientes-admin'], queryFn: ingredientesDb.listarTodos })
@@ -23,10 +23,18 @@ export function EstoquePage() {
     setEd(item || null)
     setForm(item ? {
       nome: item.nome, unidade: item.unidade,
-      quantidade_estoque: String(item.quantidade_estoque), estoque_minimo: String(item.estoque_minimo),
-      permite_adicional: item.permite_adicional, quantidade_adicional: String(item.quantidade_adicional || ''),
+      quantidade_estoque: String(item.quantidade_estoque),
+      estoque_minimo: String(item.estoque_minimo),
+      permite_adicional: item.permite_adicional,
+      quantidade_adicional: String(item.quantidade_adicional || ''),
+      quantidade_adicional_exibida: String(item.quantidade_adicional || ''),
+      unidade_adicional: item.unidade,
       preco_adicional: String(item.preco_adicional || '0')
-    } : { nome:'', unidade:'g', quantidade_estoque:'0', estoque_minimo:'0', permite_adicional: false, quantidade_adicional:'', preco_adicional:'0' })
+    } : {
+      nome:'', unidade:'g', quantidade_estoque:'0', estoque_minimo:'0',
+      permite_adicional: false, quantidade_adicional:'',
+      quantidade_adicional_exibida: '', unidade_adicional: '', preco_adicional:'0'
+    })
     setModal(true)
   }
 
@@ -111,9 +119,59 @@ export function EstoquePage() {
             </label>
           </div>
           {form.permite_adicional && (
-            <div className="grid grid-cols-2 gap-3 pl-6 border-l-2 border-pizza-500/30">
-              <FormField label="Qtd. adicional"><input type="number" step="0.001" value={form.quantidade_adicional} onChange={e => f('quantidade_adicional',e.target.value)} className="input" placeholder="Qtd por pedido"/></FormField>
-              <FormField label="Preço adicional"><input type="number" step="0.01" value={form.preco_adicional} onChange={e => f('preco_adicional',e.target.value)} className="input"/></FormField>
+            <div className="pl-6 border-l-2 border-pizza-500/30 space-y-3">
+              <div className="p-2.5 bg-gray-800/60 rounded-lg">
+                <p className="text-xs text-gray-400 mb-2">
+                  Estoque cadastrado em: <strong className="text-pizza-400">{form.unidade}</strong>
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Unidade do adicional">
+                    <select
+                      value={form.unidade_adicional || form.unidade}
+                      onChange={e => {
+                        const novaUnidade = e.target.value
+                        // Reconverte a quantidade para a nova unidade de exibição
+                        f('unidade_adicional', novaUnidade)
+                      }}
+                      className="input">
+                      {form.unidade === 'kg' || form.unidade === 'g'
+                        ? <><option value="g">g (gramas)</option><option value="kg">kg (quilos)</option></>
+                        : form.unidade === 'l' || form.unidade === 'ml'
+                        ? <><option value="ml">ml (mililitros)</option><option value="l">l (litros)</option></>
+                        : <option value={form.unidade}>{form.unidade}</option>
+                      }
+                    </select>
+                  </FormField>
+                  <FormField label={`Quantidade por pedido (${form.unidade_adicional || form.unidade})`}>
+                    <input
+                      type="number" step="0.001" min="0"
+                      value={form.quantidade_adicional_exibida || ''}
+                      placeholder={`ex: ${(form.unidade_adicional || form.unidade) === 'g' ? '100' : '0.1'}`}
+                      onChange={e => {
+                        const val = e.target.value
+                        const unidadeDigitada = form.unidade_adicional || form.unidade
+                        const unidadeEstoque = form.unidade
+                        let emEstoque = Number(val)
+                        if (unidadeDigitada === 'g'  && unidadeEstoque === 'kg') emEstoque = Number(val) / 1000
+                        if (unidadeDigitada === 'kg' && unidadeEstoque === 'g')  emEstoque = Number(val) * 1000
+                        if (unidadeDigitada === 'ml' && unidadeEstoque === 'l')  emEstoque = Number(val) / 1000
+                        if (unidadeDigitada === 'l'  && unidadeEstoque === 'ml') emEstoque = Number(val) * 1000
+                        f('quantidade_adicional_exibida', val)
+                        f('quantidade_adicional', String(emEstoque))
+                      }}
+                      className="input" />
+                  </FormField>
+                </div>
+                {form.quantidade_adicional_exibida && form.quantidade_adicional && (
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    = <strong className="text-gray-300">{Number(form.quantidade_adicional).toFixed(4)} {form.unidade}</strong> serão baixados do estoque por pedido
+                  </p>
+                )}
+              </div>
+              <FormField label="Preço cobrado por este adicional (R$)">
+                <input type="number" step="0.01" value={form.preco_adicional}
+                  onChange={e => f('preco_adicional', e.target.value)} className="input" placeholder="0.00" />
+              </FormField>
             </div>
           )}
           <div className="flex gap-2 pt-2">
