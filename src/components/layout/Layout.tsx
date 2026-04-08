@@ -23,7 +23,6 @@ const navAdmin = [
   { to: '/admin/cardapio',  icon: UtensilsCrossed, label: 'Cardápio' },
   { to: '/admin/estoque',   icon: Package,         label: 'Estoque' },
   { to: '/admin/equipe',    icon: Settings,        label: 'Equipe' },
-  { to: '/admin/mesas',    icon: Armchair,        label: 'Mesas' },
 ]
 
 export function Layout() {

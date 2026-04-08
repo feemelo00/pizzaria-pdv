@@ -504,8 +504,7 @@ export const mesasDb = {
     await supabase.from('mesas').update({ status: 'livre' }).eq('id', id)
   },
   buscarComanda: async (mesaId: number) => {
-    // Busca todos os pedidos ativos da mesa
-    const { data } = await supabase.from('pedidos')
+    const { data, error } = await supabase.from('pedidos')
       .select(`
         *,
         itens_pedido(
@@ -521,8 +520,9 @@ export const mesasDb = {
         pagamentos(*)
       `)
       .eq('mesa_id', mesaId)
-      .not('status', 'eq', 'devolvido')
+      .not('status', 'in', '("devolvido","finalizado")')
       .order('data_criacao', { ascending: true })
+    if (error) console.error('Erro buscarComanda:', error)
     return data ?? []
-  }
+  },
 }

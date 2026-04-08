@@ -1,30 +1,34 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motoboysDb } from '../../lib/db'
+import { motoboysDb, mesasDb } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
 import { Table, Modal, FormField, ConfirmDialog, Empty, LoadingPage } from '../../components/ui'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-type Aba = 'motoboys' | 'usuarios'
+type Aba = 'motoboys' | 'usuarios' | 'mesas'
 
 export function EquipePage() {
   const [aba, setAba] = useState<Aba>('motoboys')
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="px-5 h-12 border-b border-gray-800 bg-gray-900 flex items-center gap-4 flex-shrink-0">
-        {(['motoboys','usuarios'] as Aba[]).map(a => (
+        {(['motoboys','usuarios','mesas'] as Aba[]).map(a => (
           <button key={a} onClick={() => setAba(a)}
             className={clsx('text-sm font-medium border-b-2 py-3 transition-colors capitalize',
               aba === a ? 'border-pizza-500 text-pizza-400' : 'border-transparent text-gray-500 hover:text-gray-300'
             )}>
-            {a === 'motoboys' ? '🛵 Motoboys' : '👥 Usuários do Sistema'}
+            {a === 'motoboys' && '🛵 Motoboys'}
+            {a === 'usuarios' && '👥 Usuários do Sistema'}
+            {a === 'mesas' && '🪑 Mesas'}
           </button>
         ))}
       </div>
       <div className="flex-1 overflow-y-auto">
-        {aba === 'motoboys' ? <TabMotoboys /> : <TabUsuarios />}
+        {aba === 'motoboys' && <TabMotoboys />}
+        {aba === 'usuarios' && <TabUsuarios />}
+        {aba === 'mesas' && <TabMesas />}
       </div>
     </div>
   )
@@ -146,4 +150,99 @@ function TabUsuarios() {
       </Modal>
     </div>
   )
+  function TabMesas() {
+    const qc = useQueryClient()
+    const [modal, setModal] = useState(false)
+    const [ed, setEd] = useState<any>(null)
+    const [excluindo, setExcluindo] = useState<number | null>(null)
+    const [form, setForm] = useState({ nome: '' })
+
+    const { data: mesas = [], isLoading } = useQuery({
+      queryKey: ['mesas-admin'],
+      queryFn: mesasDb.listar
+    })
+
+    const abrir = (item?: any) => {
+      setEd(item || null)
+      setForm(item ? { nome: item.nome } : { nome: '' })
+      setModal(true)
+    }
+
+    const { mutate: salvar, isPending } = useMutation({
+      mutationFn: () => ed
+        ? mesasDb.atualizar(ed.id, { nome: form.nome })
+        : mesasDb.criar({ nome: form.nome }),
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ['mesas-admin'] })
+        qc.invalidateQueries({ queryKey: ['mesas'] })
+        setModal(false)
+        toast.success('Salvo!')
+      },
+      onError: (e: Error) => toast.error(e.message)
+    })
+
+    const { mutate: excluir } = useMutation({
+      mutationFn: (id: number) => mesasDb.excluir(id),
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ['mesas-admin'] })
+        toast.success('Mesa excluída')
+      },
+      onError: () => toast.error('Não é possível excluir mesa com pedidos vinculados')
+    })
+
+    return (
+      <div className="p-4">
+        <div className="flex justify-end mb-4">
+          <button onClick={() => abrir()} className="btn-primary px-3 py-1.5 text-xs flex items-center gap-1.5">
+            <Plus size={14} /> Nova mesa
+          </button>
+        </div>
+        {isLoading ? <LoadingPage /> : !(mesas as any[]).length ? (
+          <Empty icon="🪑" title="Nenhuma mesa" desc="Cadastre as mesas do estabelecimento" />
+        ) : (
+          <Table headers={['Mesa', 'Status', 'Ações']}>
+            {(mesas as any[]).map(m => (
+              <tr key={m.id} className="hover:bg-gray-800/30">
+                <td className="px-4 py-3 text-sm font-medium text-gray-200">{m.nome}</td>
+                <td className="px-4 py-3">
+                  <span className={clsx('badge border', m.status === 'livre'
+                    ? 'bg-green-900/40 text-green-400 border-green-800/40'
+                    : 'bg-orange-900/40 text-orange-400 border-orange-800/40'
+                  )}>
+                    {m.status === 'livre' ? '🟢 Livre' : '🔴 Ocupada'}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-1">
+                    <button onClick={() => abrir(m)} className="btn-ghost p-1.5"><Pencil size={13} /></button>
+                    {m.status === 'livre' && (
+                      <button onClick={() => setExcluindo(m.id)} className="btn-ghost p-1.5 text-red-600 hover:text-red-400">
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+
+        <Modal open={modal} onClose={() => setModal(false)} title={ed ? 'Editar Mesa' : 'Nova Mesa'} size="sm">
+          <div className="space-y-3">
+            <FormField label="Nome da mesa *">
+              <input value={form.nome} onChange={e => setForm({ nome: e.target.value })}
+                className="input" placeholder="Ex: Mesa 1, Mesa VIP..." autoFocus />
+            </FormField>
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setModal(false)} className="btn-secondary flex-1">Cancelar</button>
+              <button onClick={() => salvar()} disabled={isPending || !form.nome} className="btn-primary flex-1">Salvar</button>
+            </div>
+          </div>
+        </Modal>
+
+        <ConfirmDialog open={!!excluindo} onClose={() => setExcluindo(null)} onConfirm={() => excluir(excluindo!)}
+          title="Excluir mesa" message="Tem certeza que deseja excluir esta mesa?" danger />
+      </div>
+    )
+  }
 }

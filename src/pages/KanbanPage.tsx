@@ -28,10 +28,7 @@ const COLUNAS: {
   },
   {
     status: 'pronto', label: 'Prontos', cor: 'border-t-green-500',
-    acoes: [
-      { label: 'Saiu p/ entrega', prox: 'delivery' },
-      { label: 'Retirou no balcão', prox: 'balcao' }
-    ]
+    acoes: [] // ações dinâmicas por tipo de pedido — ver KanbanCard
   },
   {
     status: 'delivery', label: 'Delivery', cor: 'border-t-blue-500',
@@ -149,7 +146,6 @@ export function KanbanPage() {
                     <KanbanCard
                       key={pedido.id}
                       pedido={pedido}
-                      acoes={col.acoes}
                       onMudar={(status) => mudarStatus({ id: pedido.id, status })}
                     />
                   ))
@@ -162,9 +158,8 @@ export function KanbanPage() {
   )
 }
 
-function KanbanCard({ pedido, acoes, onMudar }: {
+function KanbanCard({ pedido, onMudar }: {
   pedido: any
-  acoes: { label: string; prox: StatusPedido; variant?: string }[]
   onMudar: (status: StatusPedido) => void
 }) {
   const minutos = Math.floor((Date.now() - new Date(pedido.data_criacao).getTime()) / 60000)
@@ -243,18 +238,58 @@ function KanbanCard({ pedido, acoes, onMudar }: {
           className="btn-ghost p-1.5 text-gray-600 hover:text-gray-300" title="Imprimir comanda">
           <Printer size={14} />
         </button>
-        {acoes.map(acao => (
-          <button key={acao.prox} onClick={() => onMudar(acao.prox)}
-            className={clsx(
-              'flex-1 text-xs py-1.5 px-2 rounded-lg font-medium transition-all flex items-center justify-center gap-1',
-              acao.variant === 'danger'
-                ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-900/30'
-                : 'bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20'
-            )}>
-            {acao.label}
-            {acao.variant !== 'danger' && <ChevronRight size={11} />}
+
+        {/* Ações dinâmicas baseadas no status e tipo */}
+        {pedido.status === 'solicitado' && <>
+          <button onClick={() => onMudar('fazendo')}
+            className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
+            Iniciar preparo <ChevronRight size={11} />
           </button>
-        ))}
+          <button onClick={() => onMudar('devolvido')}
+            className="text-xs py-1.5 px-2 rounded-lg font-medium bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-900/30">
+            Devolver
+          </button>
+        </>}
+
+        {pedido.status === 'fazendo' && (
+          <button onClick={() => onMudar('pronto')}
+            className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
+            Marcar pronto <ChevronRight size={11} />
+          </button>
+        )}
+
+        {pedido.status === 'pronto' && pedido.tipo === 'mesa' && (
+          <button onClick={() => onMudar('balcao')}
+            className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/20 flex items-center justify-center gap-1">
+            🪑 Entregar na {pedido.mesa?.nome || 'mesa'}
+          </button>
+        )}
+
+        {pedido.status === 'pronto' && pedido.tipo !== 'mesa' && <>
+          {pedido.tipo?.includes('delivery') && (
+            <button onClick={() => onMudar('delivery')}
+              className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
+              Saiu p/ entrega <ChevronRight size={11} />
+            </button>
+          )}
+          {!pedido.tipo?.includes('delivery') && (
+            <button onClick={() => onMudar('balcao')}
+              className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
+              Retirou no balcão <ChevronRight size={11} />
+            </button>
+          )}
+        </>}
+
+        {(pedido.status === 'delivery' || pedido.status === 'balcao') && <>
+          <button onClick={() => onMudar('finalizado')}
+            className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
+            Finalizar <ChevronRight size={11} />
+          </button>
+          <button onClick={() => onMudar('devolvido')}
+            className="text-xs py-1.5 px-2 rounded-lg font-medium bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-900/30">
+            Devolver
+          </button>
+        </>}
       </div>
     </div>
   )
