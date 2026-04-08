@@ -520,7 +520,7 @@ export const mesasDb = {
         pagamentos(*)
       `)
       .eq('mesa_id', mesaId)
-      .not('status', 'in', '("devolvido","finalizado")')
+      .not('status', 'in', `(devolvido,finalizado)`)
       .order('data_criacao', { ascending: true })
     if (error) console.error('Erro buscarComanda:', error)
     return data ?? []
