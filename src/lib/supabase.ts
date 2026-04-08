@@ -72,9 +72,15 @@ export type Borda = {
   id: number; nome: string; preco: number; ativo: boolean; created_at: string
 }
 export type StatusPedido = 'solicitado'|'fazendo'|'pronto'|'delivery'|'balcao'|'finalizado'|'devolvido'
-export type TipoPedido = 'balcao_retirada'|'balcao_delivery'|'online_retirada'|'online_delivery'
+export type TipoPedido = 'balcao_retirada'|'balcao_delivery'|'online_retirada'|'online_delivery'|'mesa'
+
+export type Mesa = {
+  id: number; nome: string; status: 'livre'|'ocupada'; created_at: string
+}
+
 export type Pedido = {
   id: number; cliente_telefone: string | null; tipo: TipoPedido; status: StatusPedido
+  mesa_id: number | null; mesa?: Mesa
   condominio_id: number | null; valor_frete: number; valor_total: number
   forma_pagamento: string | null; motoboy_id: number | null; observacao: string | null
   origem: string; data_criacao: string; data_finalizacao: string | null; updated_at: string

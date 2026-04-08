@@ -2,17 +2,18 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, ShoppingCart, KanbanSquare, ChefHat,
   Truck, Settings, LogOut, Package, Users, BarChart3,
-  Pizza, UtensilsCrossed
+  Pizza, UtensilsCrossed, Armchair, ClipboardList
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '../../store/authStore'
 import toast from 'react-hot-toast'
 
 const navFuncionario = [
-  { to: '/pdv',      icon: ShoppingCart,  label: 'PDV' },
-  { to: '/kanban',   icon: KanbanSquare,  label: 'Kanban' },
-  { to: '/cozinha',  icon: ChefHat,       label: 'Cozinha' },
-  { to: '/entregas', icon: Truck,         label: 'Entregas' },
+  { to: '/pdv',      icon: ShoppingCart,   label: 'PDV' },
+  { to: '/kanban',   icon: KanbanSquare,   label: 'Kanban' },
+  { to: '/cozinha',  icon: ChefHat,        label: 'Cozinha' },
+  { to: '/entregas', icon: Truck,          label: 'Entregas' },
+  { to: '/mesas',    icon: ClipboardList,  label: 'Mesas' },
 ]
 
 const navAdmin = [
@@ -22,6 +23,7 @@ const navAdmin = [
   { to: '/admin/cardapio',  icon: UtensilsCrossed, label: 'Cardápio' },
   { to: '/admin/estoque',   icon: Package,         label: 'Estoque' },
   { to: '/admin/equipe',    icon: Settings,        label: 'Equipe' },
+  { to: '/admin/mesas',    icon: Armchair,        label: 'Mesas' },
 ]
 
 export function Layout() {

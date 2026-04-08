@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { pizzasDb, bebidasDb, outrosDb, bordasDb, ingredientesDb, clientesDb, condominiosDb, pedidosDb } from '../lib/db'
+import { pizzasDb, bebidasDb, outrosDb, bordasDb, ingredientesDb, clientesDb, condominiosDb, pedidosDb, mesasDb } from '../lib/db'
+import type { Mesa } from '../lib/supabase'
 import { useCarrinhoStore, type ItemCarrinho } from '../store/carrinhoStore'
 import { Modal, FormField, Spinner, Empty } from '../components/ui'
 import { Search, Plus, Minus, Trash2, ShoppingCart, UserSearch, X } from 'lucide-react'
@@ -11,6 +12,7 @@ import toast from 'react-hot-toast'
 const TIPOS_PEDIDO = [
   { value: 'balcao_retirada', label: '🏪 Balcão · Retirada' },
   { value: 'balcao_delivery', label: '🏪 Balcão · Delivery' },
+  { value: 'mesa',            label: '🪑 Mesa' },
   { value: 'online_retirada', label: '📱 Online · Retirada' },
   { value: 'online_delivery', label: '📱 Online · Delivery' },
 ]
@@ -27,8 +29,12 @@ export function PDVPage() {
   const [pizzaModal, setPizzaModal] = useState<Pizza | null>(null)
   const [clienteModal, setClienteModal] = useState(false)
   const [busca, setBusca] = useState('')
+  const [mesaModal, setMesaModal] = useState(false)
+  const [mesaSelecionada, setMesaSelecionada] = useState<Mesa | null>(null)
   const carrinho = useCarrinhoStore()
 
+  const { data: mesas = [] } = useQuery({ queryKey: ['mesas'], queryFn: mesasDb.listar })
+  const isMesa = carrinho.tipoPedido === 'mesa'
   const { data: pizzas = [] }  = useQuery({ queryKey: ['pizzas-disp'], queryFn: pizzasDb.listarDisponiveis })
   const { data: bebidas = [] } = useQuery({ queryKey: ['bebidas-disp'], queryFn: bebidasDb.listarDisponiveis })
   const { data: outros = [] }  = useQuery({ queryKey: ['outros-disp'],  queryFn: outrosDb.listarDisponiveis })
@@ -49,7 +55,8 @@ export function PDVPage() {
       if (!carrinho.itens.length) throw new Error('Adicione pelo menos um item')
       if (isDelivery && !carrinho.clienteTelefone) throw new Error('Delivery exige cliente cadastrado')
       if (isDelivery && !clienteData?.condominio_id) throw new Error('Cliente sem condomínio cadastrado')
-
+      
+      if (isMesa && !mesaSelecionada) throw new Error('Selecione uma mesa')
       const pedidoData = {
         cliente_telefone: carrinho.clienteTelefone || null,
         tipo: carrinho.tipoPedido,
@@ -86,8 +93,12 @@ export function PDVPage() {
       }))
       return pedidosDb.criar(pedidoData, itens)
     },
-    onSuccess: (pedido) => {
+    onSuccess: async (pedido) => {
       toast.success(`✅ Pedido #${pedido.id} criado!`, { duration: 5000 })
+      if (mesaSelecionada) {
+        await mesasDb.ocupar(mesaSelecionada.id)
+        setMesaSelecionada(null)
+      }
       carrinho.limpar()
     },
     onError: (e: Error) => toast.error(e.message)
@@ -112,6 +123,24 @@ export function PDVPage() {
           </div>
           {/* Busca cliente */}
           <BuscaCliente onAbrirModal={() => setClienteModal(true)} />
+          {/* Seletor de mesa */}
+          {isMesa && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setMesaModal(true)}
+                className={clsx('text-xs px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5',
+                  mesaSelecionada
+                    ? 'bg-pizza-500/20 text-pizza-400 border-pizza-500/40'
+                    : 'text-gray-400 border-gray-700 hover:border-gray-600'
+                )}>
+                🪑 {mesaSelecionada ? mesaSelecionada.nome : 'Selecionar mesa'}
+              </button>
+              {mesaSelecionada && (
+                <button onClick={() => setMesaSelecionada(null)} className="text-gray-600 hover:text-gray-400">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Abas cardápio + busca */}
@@ -280,6 +309,26 @@ export function PDVPage() {
           onClose={() => setPizzaModal(null)}
         />
       )}
+      {/* Modal seleção de mesa */}
+      <Modal open={mesaModal} onClose={() => setMesaModal(false)} title="Selecionar Mesa" size="sm">
+        <div className="space-y-2">
+          {(mesas as Mesa[]).map(mesa => (
+            <button key={mesa.id} onClick={() => { setMesaSelecionada(mesa); setMesaModal(false) }}
+              disabled={mesa.status === 'ocupada'}
+              className={clsx(
+                'w-full text-left p-3 rounded-xl border transition-all',
+                mesa.status === 'ocupada'
+                  ? 'border-gray-700 bg-gray-800/30 opacity-50 cursor-not-allowed'
+                  : 'border-gray-700 bg-gray-800/30 hover:border-pizza-500/50 hover:bg-pizza-500/10'
+              )}>
+              <div className="font-medium text-gray-200">{mesa.nome}</div>
+              <div className={clsx('text-xs mt-0.5', mesa.status === 'ocupada' ? 'text-orange-400' : 'text-green-400')}>
+                {mesa.status === 'ocupada' ? '🔴 Ocupada' : '🟢 Livre'}
+              </div>
+            </button>
+          ))}
+        </div>
+      </Modal>
       <ModalCliente open={clienteModal} onClose={() => setClienteModal(false)} />
     </div>
   )

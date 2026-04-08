@@ -190,6 +190,11 @@ function KanbanCard({ pedido, acoes, onMudar }: {
           {pedido.tipo?.includes('delivery') && (
             <span className="ml-2 badge bg-blue-900/40 text-blue-400 border border-blue-800/40">🛵</span>
           )}
+          {pedido.tipo === 'mesa' && pedido.mesa && (
+            <span className="ml-2 badge bg-amber-900/40 text-amber-400 border border-amber-800/40">
+              🪑 {pedido.mesa.nome}
+            </span>
+          )}
           {pedido.origem === 'whatsapp' && (
             <span className="ml-1 badge bg-green-900/40 text-green-400 border border-green-800/40">📱</span>
           )}

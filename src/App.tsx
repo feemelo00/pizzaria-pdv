@@ -15,6 +15,8 @@ import { CardapioPage } from './pages/admin/CardapioPage'
 import { EstoquePage } from './pages/admin/EstoquePage'
 import { EquipePage } from './pages/admin/EquipePage'
 import { Spinner } from './components/ui'
+import { ComandaMesaPage } from './pages/ComandaMesaPage'
+import { MesasPage } from './pages/admin/MesasPage'
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } }
@@ -55,6 +57,10 @@ export default function App() {
             <Route path="kanban"   element={<KanbanPage />} />
             <Route path="cozinha"  element={<CozinhaPage />} />
             <Route path="entregas" element={<EntregasPage />} />
+            <Route path="mesas" element={<ComandaMesaPage />} />
+            <Route path="admin/mesas" element={
+              <ProtectedRoute onlyAdmin><MesasPage /></ProtectedRoute>
+            } />
             {/* Proprietário */}
             <Route path="dashboard" element={
               <ProtectedRoute onlyAdmin><DashboardPage /></ProtectedRoute>
