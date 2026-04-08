@@ -201,6 +201,7 @@ export function PDVPage() {
             </div>
           )}
         </div>
+</div>
 
       {/* ── Carrinho direito ── */}
       <div className="w-72 xl:w-80 flex-shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col">
@@ -281,7 +282,6 @@ export function PDVPage() {
       )}
       <ModalCliente open={clienteModal} onClose={() => setClienteModal(false)} />
     </div>
-  </div>
   )
 }
 
