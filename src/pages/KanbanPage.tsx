@@ -185,9 +185,9 @@ function KanbanCard({ pedido, onMudar }: {
           {pedido.tipo?.includes('delivery') && (
             <span className="ml-2 badge bg-blue-900/40 text-blue-400 border border-blue-800/40">🛵</span>
           )}
-          {pedido.tipo === 'mesa' && pedido.mesa && (
+          {pedido.tipo === 'mesa' && (
             <span className="ml-2 badge bg-amber-900/40 text-amber-400 border border-amber-800/40">
-              🪑 {pedido.mesa.nome}
+              🪑 {pedido.mesa?.nome || 'Mesa'}
             </span>
           )}
           {pedido.origem === 'whatsapp' && (
@@ -261,7 +261,7 @@ function KanbanCard({ pedido, onMudar }: {
         {pedido.status === 'pronto' && pedido.tipo === 'mesa' && (
           <button onClick={() => onMudar('balcao')}
             className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/20 flex items-center justify-center gap-1">
-            🪑 Levar para {pedido.mesa?.nome || 'mesa'}
+            🪑 Levar para {pedido.mesa?.nome ?? `mesa #${pedido.mesa_id}`}
           </button>
         )}
 

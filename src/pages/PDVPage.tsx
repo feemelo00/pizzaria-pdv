@@ -62,6 +62,7 @@ export function PDVPage() {
         tipo: carrinho.tipoPedido,
         status: 'solicitado',
         condominio_id: clienteData?.condominio_id || null,
+        mesa_id: mesaSelecionada?.id || null,
         valor_frete: frete,
         valor_total: total,
         forma_pagamento: carrinho.formaPagamento,
