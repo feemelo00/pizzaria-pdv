@@ -96,10 +96,10 @@ export function PDVPage() {
     },
     onSuccess: async (pedido) => {
       toast.success(`✅ Pedido #${pedido.id} criado!`, { duration: 5000 })
-      if (mesaSelecionada) {
+      if (mesaSelecionada && mesaSelecionada.status === 'livre') {
         await mesasDb.ocupar(mesaSelecionada.id)
-        setMesaSelecionada(null)
       }
+      setMesaSelecionada(null)
       carrinho.limpar()
     },
     onError: (e: Error) => toast.error(e.message)
@@ -315,16 +315,15 @@ export function PDVPage() {
         <div className="space-y-2">
           {(mesas as Mesa[]).map(mesa => (
             <button key={mesa.id} onClick={() => { setMesaSelecionada(mesa); setMesaModal(false) }}
-              disabled={mesa.status === 'ocupada'}
               className={clsx(
                 'w-full text-left p-3 rounded-xl border transition-all',
                 mesa.status === 'ocupada'
-                  ? 'border-gray-700 bg-gray-800/30 opacity-50 cursor-not-allowed'
+                  ? 'border-orange-700/60 bg-orange-900/10 hover:border-orange-500/60 hover:bg-orange-900/20'
                   : 'border-gray-700 bg-gray-800/30 hover:border-pizza-500/50 hover:bg-pizza-500/10'
               )}>
               <div className="font-medium text-gray-200">{mesa.nome}</div>
               <div className={clsx('text-xs mt-0.5', mesa.status === 'ocupada' ? 'text-orange-400' : 'text-green-400')}>
-                {mesa.status === 'ocupada' ? '🔴 Ocupada' : '🟢 Livre'}
+                {mesa.status === 'ocupada' ? '🔴 Ocupada — adicionar à comanda' : '🟢 Livre'}
               </div>
             </button>
           ))}

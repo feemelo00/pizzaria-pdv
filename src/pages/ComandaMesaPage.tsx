@@ -19,6 +19,68 @@ export function ComandaMesaPage() {
     refetchInterval: 15_000
   })
 
+  const { mutate: removerItem, isPending: removendo } = useMutation({
+    mutationFn: async (item: any) => {
+      // Só permite remover de pedidos em status solicitado
+      const pedidoDoItem = (pedidos as any[]).find(p =>
+        p.itens_pedido?.some((i: any) => i.id === item.id)
+      )
+      if (!pedidoDoItem) throw new Error('Pedido não encontrado')
+      if (pedidoDoItem.status !== 'solicitado') {
+        throw new Error('Só é possível remover itens de pedidos ainda em "solicitado"')
+      }
+
+      // Devolver estoque
+      if (item.tipo_item === 'pizza' && item.pizza_ingredientes) {
+        for (const pi of item.pizza_ingredientes) {
+          const { data: ing } = await supabase.from('ingredientes')
+            .select('quantidade_estoque').eq('id', pi.ingrediente_id).single()
+          if (ing) {
+            await supabase.from('ingredientes')
+              .update({ quantidade_estoque: Number(ing.quantidade_estoque) + Number(pi.quantidade) * item.quantidade })
+              .eq('id', pi.ingrediente_id)
+          }
+        }
+      }
+      if (item.tipo_item === 'bebida' && item.bebida_id) {
+        const { data: beb } = await supabase.from('bebidas')
+          .select('quantidade_estoque').eq('id', item.bebida_id).single()
+        if (beb) await supabase.from('bebidas')
+          .update({ quantidade_estoque: Number(beb.quantidade_estoque) + item.quantidade })
+          .eq('id', item.bebida_id)
+      }
+      if (item.tipo_item === 'outro' && item.outro_id) {
+        const { data: out } = await supabase.from('outros_produtos')
+          .select('quantidade_estoque').eq('id', item.outro_id).single()
+        if (out) await supabase.from('outros_produtos')
+          .update({ quantidade_estoque: Number(out.quantidade_estoque) + item.quantidade })
+          .eq('id', item.outro_id)
+      }
+
+      // Remover adicionais e o item
+      await supabase.from('adicionais_item').delete().eq('item_pedido_id', item.id)
+      await supabase.from('itens_pedido').delete().eq('id', item.id)
+
+      // Recalcular total do pedido
+      const { data: itensRestantes } = await supabase.from('itens_pedido')
+        .select('valor_unitario, quantidade').eq('pedido_id', pedidoDoItem.id)
+      const novoTotal = (itensRestantes || []).reduce(
+        (acc: number, i: any) => acc + Number(i.valor_unitario) * i.quantidade, 0
+      )
+      await supabase.from('pedidos').update({ valor_total: novoTotal }).eq('id', pedidoDoItem.id)
+
+      // Se ficou sem itens, remove o pedido também
+      if (!itensRestantes?.length) {
+        await supabase.from('pedidos').delete().eq('id', pedidoDoItem.id)
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['comanda', mesa.id] })
+      toast.success('Item removido e estoque devolvido!')
+    },
+    onError: (e: Error) => toast.error(e.message)
+  })
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* Lista de mesas */}
@@ -222,16 +284,27 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: () => voi
                   </div>
                   <div className="space-y-1 mb-3">
                     {(pedido.itens_pedido || []).map((item: any, i: number) => (
-                      <div key={i} className="flex justify-between text-sm">
-                        <span className="text-gray-400">
+                      <div key={i} className="flex justify-between items-center text-sm py-0.5">
+                        <span className="text-gray-400 flex-1">
                           {item.quantidade}x {item.meia_pizza
                             ? `½ ${item.pizza_metade_1?.nome} + ½ ${item.pizza_metade_2?.nome}`
                             : item.pizza?.nome || item.bebida?.nome || item.outro?.nome}
                           {item.borda && ` (borda ${item.borda.nome})`}
                         </span>
-                        <span className="text-gray-300 font-medium">
+                        <span className="text-gray-300 font-medium mx-3">
                           R$ {(Number(item.valor_unitario) * item.quantidade).toFixed(2)}
                         </span>
+                        {pedido.status === 'solicitado' && (
+                          <button
+                            onClick={() => removerItem(item)}
+                            disabled={removendo}
+                            className="text-gray-700 hover:text-red-400 transition-colors flex-shrink-0"
+                            title="Remover item (devolve estoque)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

@@ -39,10 +39,11 @@ const COLUNAS: {
   },
   {
     status: 'balcao', label: 'Balcão', cor: 'border-t-purple-500',
-    acoes: [
-      { label: 'Finalizar', prox: 'finalizado' },
-      { label: 'Devolver', prox: 'devolvido', variant: 'danger' }
-    ]
+    acoes: []
+  },
+  {
+    status: 'na_mesa' as any, label: 'Na Mesa', cor: 'border-t-amber-500',
+    acoes: []
   },
 ]
 
@@ -102,10 +103,21 @@ export function KanbanPage() {
     onError: (err: Error) => toast.error(err.message)
   })
 
-  const porStatus = (status: StatusPedido) =>
-    pedidos
+  const porStatus = (status: string) => {
+    if (status === 'na_mesa') {
+      return pedidos
+        .filter(p => p.status === 'balcao' && p.tipo === 'mesa')
+        .sort((a, b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
+    }
+    if (status === 'balcao') {
+      return pedidos
+        .filter(p => p.status === 'balcao' && p.tipo !== 'mesa')
+        .sort((a, b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
+    }
+    return pedidos
       .filter(p => p.status === status)
       .sort((a, b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
+  }
 
   if (isLoading && !pedidos.length) return (
     <div className="flex items-center justify-center h-full">
@@ -280,7 +292,7 @@ function KanbanCard({ pedido, onMudar }: {
           )}
         </>}
 
-        {(pedido.status === 'delivery' || pedido.status === 'balcao') && <>
+        {pedido.status === 'delivery' && <>
           <button onClick={() => onMudar('finalizado')}
             className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
             Finalizar <ChevronRight size={11} />
@@ -290,6 +302,23 @@ function KanbanCard({ pedido, onMudar }: {
             Devolver
           </button>
         </>}
+
+        {pedido.status === 'balcao' && pedido.tipo !== 'mesa' && <>
+          <button onClick={() => onMudar('finalizado')}
+            className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
+            Finalizar <ChevronRight size={11} />
+          </button>
+          <button onClick={() => onMudar('devolvido')}
+            className="text-xs py-1.5 px-2 rounded-lg font-medium bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-900/30">
+            Devolver
+          </button>
+        </>}
+
+        {pedido.status === 'balcao' && pedido.tipo === 'mesa' && (
+          <div className="flex items-center gap-1.5 bg-amber-900/20 border border-amber-800/30 rounded-lg px-2 py-1.5">
+            <span className="text-xs text-amber-400">🪑 Fechar pela tela de Mesas</span>
+          </div>
+        )}
       </div>
     </div>
   )
