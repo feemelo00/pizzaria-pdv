@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+  import { supabase } from './supabase'
 import type { StatusPedido } from './supabase'
 
 // ============================================================
@@ -282,6 +282,7 @@ export const pedidosDb = {
         pizza:pizzas!itens_pedido_pizza_id_fkey(id, nome, preco),
         pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(id, nome, preco),
         pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(id, nome, preco),
+        pizza_metade_3:pizzas!itens_pedido_pizza_metade_3_id_fkey(id, nome, preco),
         bebida:bebidas(id, nome),
         outro:outros_produtos(id, nome),
         borda:bordas(id, nome, preco),
@@ -318,6 +319,7 @@ export const pedidosDb = {
         pizza:pizzas!itens_pedido_pizza_id_fkey(*),
         pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(*),
         pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(*),
+        pizza_metade_3:pizzas!itens_pedido_pizza_metade_3_id_fkey(id, nome, preco),
         bebida:bebidas(*),
         outro:outros_produtos(*),
         borda:bordas(*),

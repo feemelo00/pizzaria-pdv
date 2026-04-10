@@ -72,12 +72,7 @@ export type Borda = {
   id: number; nome: string; preco: number; ativo: boolean; created_at: string
 }
 export type StatusPedido = 'solicitado'|'fazendo'|'pronto'|'delivery'|'balcao'|'finalizado'|'devolvido'
-export type TipoPedido = 'balcao_retirada'|'balcao_delivery'|'online_retirada'|'online_delivery'|'mesa'
-
-export type Mesa = {
-  id: number; nome: string; status: 'livre'|'ocupada'; created_at: string
-}
-
+export type TipoPedido = 'delivery'|'retirada'|'mesa'
 export type Pedido = {
   id: number; cliente_telefone: string | null; tipo: TipoPedido; status: StatusPedido
   mesa_id: number | null; mesa?: Mesa
@@ -90,11 +85,11 @@ export type Pedido = {
 export type ItemPedido = {
   id: number; pedido_id: number; tipo_item: string; pizza_id: number | null
   bebida_id: number | null; outro_id: number | null; quantidade: number
-  meia_pizza: boolean; pizza_metade_1_id: number | null; pizza_metade_2_id: number | null
-  borda_id: number | null; observacao: string | null; valor_unitario: number; created_at: string
+  meia_pizza: boolean; pizza_metade_1_id: number | null; pizza_metade_2_id: number | null; pizza_metade_3_id: number | null
+  tres_sabores: boolean; borda_id: number | null; observacao: string | null; valor_unitario: number; created_at: string
 }
 export type ItemPedidoCompleto = ItemPedido & {
-  pizza?: Pizza; pizza_metade_1?: Pizza; pizza_metade_2?: Pizza
+  pizza?: Pizza; pizza_metade_1?: Pizza; pizza_metade_2?: Pizza; pizza_metade_3?: Pizza
   bebida?: Bebida; outro?: OutroProduto; borda?: Borda
   adicionais_item?: (AdicionalItem & { ingrediente?: Ingrediente })[]
 }

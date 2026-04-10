@@ -9,11 +9,13 @@ import clsx from 'clsx'
 import { supabase } from '../lib/supabase'
 
 export function DashboardPage() {
+  const [modo, setModo] = useState<'dia'|'mes'>('dia')
   const [data, setData] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [mes, setMes] = useState(format(new Date(), 'yyyy-MM'))
 
   const { data: kpis, isLoading } = useQuery({
-    queryKey: ['kpis', data],
-    queryFn: () => financeiroDb.kpisDia(data),
+    queryKey: ['kpis', modo, data, mes],
+    queryFn: () => modo === 'dia' ? financeiroDb.kpisDia(data) : financeiroDb.kpisMes(Number(mes.split('-')[0]), Number(mes.split('-')[1])),
     refetchInterval: 60_000
   })
   const { data: estoqueBaixo = [] } = useQuery({
@@ -36,8 +38,20 @@ export function DashboardPage() {
       <div className="flex items-center justify-between px-5 h-12 border-b border-gray-800 bg-gray-900 flex-shrink-0">
         <h1 className="font-semibold text-gray-100 text-sm">Dashboard</h1>
         <div className="flex items-center gap-2">
-          <input type="date" value={data} onChange={e => setData(e.target.value)}
-            className="bg-gray-800 border border-gray-700 text-gray-300 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-pizza-500" />
+          <div className="flex gap-1">
+            {(['dia','mes'] as const).map(m => (
+              <button key={m} onClick={() => setModo(m)}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${modo === m ? 'bg-pizza-500/20 text-pizza-400 border-pizza-500/40' : 'text-gray-500 border-gray-700 hover:border-gray-600'}`}>
+                {m === 'dia' ? 'Dia' : 'Mês'}
+              </button>
+            ))}
+          </div>
+          {modo === 'dia'
+            ? <input type="date" value={data} onChange={e => setData(e.target.value)}
+                className="bg-gray-800 border border-gray-700 text-gray-300 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-pizza-500" />
+            : <input type="month" value={mes} onChange={e => setMes(e.target.value)}
+                className="bg-gray-800 border border-gray-700 text-gray-300 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-pizza-500" />
+          }
         </div>
       </div>
 

@@ -6,17 +6,15 @@ import { Layout } from './components/layout/Layout'
 import { LoginPage } from './pages/LoginPage'
 import { PDVPage } from './pages/PDVPage'
 import { KanbanPage } from './pages/KanbanPage'
-import { CozinhaPage } from './pages/CozinhaPage'
-import { EntregasPage } from './pages/EntregasPage'
+import { ComandaMesaPage } from './pages/ComandaMesaPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { HistoricoPage } from './pages/HistoricoPage'
+import { InsightsPage } from './pages/InsightsPage'
 import { ClientesPage } from './pages/admin/ClientesPage'
-import { PizzasPage } from './pages/admin/PizzasPage'
 import { CardapioPage } from './pages/admin/CardapioPage'
 import { EstoquePage } from './pages/admin/EstoquePage'
 import { EquipePage } from './pages/admin/EquipePage'
 import { Spinner } from './components/ui'
-import { ComandaMesaPage } from './pages/ComandaMesaPage'
-import { MesasPage } from './pages/admin/MesasPage'
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } }
@@ -40,46 +38,24 @@ export default function App() {
   return (
     <QueryClientProvider client={qc}>
       <BrowserRouter>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: { background: '#1f2937', color: '#f3f4f6', border: '1px solid #374151', borderRadius: '10px' },
-            success: { iconTheme: { primary: '#f97316', secondary: '#fff' } }
-          }}
-        />
+        <Toaster position="top-right" toastOptions={{
+          style: { background: '#1f2937', color: '#f3f4f6', border: '1px solid #374151', borderRadius: '10px' },
+          success: { iconTheme: { primary: '#f97316', secondary: '#fff' } }
+        }} />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={
-            <ProtectedRoute><Layout /></ProtectedRoute>
-          }>
+          <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Navigate to="/pdv" replace />} />
-            <Route path="pdv"      element={<PDVPage />} />
-            <Route path="kanban"   element={<KanbanPage />} />
-            <Route path="cozinha"  element={<CozinhaPage />} />
-            <Route path="entregas" element={<EntregasPage />} />
-            <Route path="mesas" element={<ComandaMesaPage />} />
-            <Route path="admin/mesas" element={
-              <ProtectedRoute onlyAdmin><MesasPage /></ProtectedRoute>
-            } />
-            {/* Proprietário */}
-            <Route path="dashboard" element={
-              <ProtectedRoute onlyAdmin><DashboardPage /></ProtectedRoute>
-            } />
-            <Route path="admin/clientes" element={
-              <ProtectedRoute onlyAdmin><ClientesPage /></ProtectedRoute>
-            } />
-            <Route path="admin/pizzas" element={
-              <ProtectedRoute onlyAdmin><PizzasPage /></ProtectedRoute>
-            } />
-            <Route path="admin/cardapio" element={
-              <ProtectedRoute onlyAdmin><CardapioPage /></ProtectedRoute>
-            } />
-            <Route path="admin/estoque" element={
-              <ProtectedRoute onlyAdmin><EstoquePage /></ProtectedRoute>
-            } />
-            <Route path="admin/equipe" element={
-              <ProtectedRoute onlyAdmin><EquipePage /></ProtectedRoute>
-            } />
+            <Route path="pdv"    element={<PDVPage />} />
+            <Route path="kanban" element={<KanbanPage />} />
+            <Route path="mesas"  element={<ComandaMesaPage />} />
+            <Route path="dashboard" element={<ProtectedRoute onlyAdmin><DashboardPage /></ProtectedRoute>} />
+            <Route path="insights"  element={<ProtectedRoute onlyAdmin><InsightsPage /></ProtectedRoute>} />
+            <Route path="historico" element={<ProtectedRoute onlyAdmin><HistoricoPage /></ProtectedRoute>} />
+            <Route path="admin/clientes" element={<ProtectedRoute onlyAdmin><ClientesPage /></ProtectedRoute>} />
+            <Route path="admin/cardapio" element={<ProtectedRoute onlyAdmin><CardapioPage /></ProtectedRoute>} />
+            <Route path="admin/estoque"  element={<ProtectedRoute onlyAdmin><EstoquePage /></ProtectedRoute>} />
+            <Route path="admin/equipe"   element={<ProtectedRoute onlyAdmin><EquipePage /></ProtectedRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/pdv" replace />} />
         </Routes>
