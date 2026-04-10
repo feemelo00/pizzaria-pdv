@@ -400,11 +400,22 @@ function ModalPizza({ pizza, todasPizzas, onClose }: { pizza: Pizza; todasPizzas
 
   const calcPreco = () => {
     let base = 0
-    if (modo === 'inteira') base = Number(pizza.preco)
-    else if (modo === 'meio') base = Math.max(Number(pizza.preco), Number(sabor2?.preco || 0))
-    else if (modo === 'tres') base = Math.max(Number(pizza.preco), Number(sabor2?.preco || 0), Number(sabor3?.preco || 0))
+    if (modo === 'inteira') {
+      base = Number(pizza.preco)
+    } else if (modo === 'meio') {
+      // Preço proporcional: média dos dois sabores (50% cada)
+      const p1 = Number(pizza.preco)
+      const p2 = Number(sabor2?.preco || 0)
+      base = (p1 + p2) / 2
+    } else if (modo === 'tres') {
+      // Preço proporcional: média dos três sabores (~33% cada)
+      const p1 = Number(pizza.preco)
+      const p2 = Number(sabor2?.preco || 0)
+      const p3 = Number(sabor3?.preco || 0)
+      base = (p1 + p2 + p3) / 3
+    }
     if (borda) base += Number(borda.preco)
-    return base
+    return Math.round(base * 100) / 100 // arredonda para 2 casas
   }
 
   const totalAdicionais = adicionais.reduce((a, ad) => a + ad.valor * ad.quantidade, 0)
@@ -520,7 +531,7 @@ function ModalPizza({ pizza, todasPizzas, onClose }: { pizza: Pizza; todasPizzas
             </div>
             {sabor2 && sabor3 && (
               <p className="text-xs text-pizza-400 mt-2">
-                💰 Preço: maior entre os 3 sabores = R$ {Math.max(Number(pizza.preco), Number(sabor2.preco), Number(sabor3.preco)).toFixed(2)}
+                💰 Preço proporcional (⅓ cada) = R$ {((Number(pizza.preco) + Number(sabor2.preco) + Number(sabor3.preco)) / 3).toFixed(2)}
               </p>
             )}
           </div>

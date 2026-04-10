@@ -93,9 +93,9 @@ export function KanbanPage() {
   })
 
   const porStatus = (status: string) => {
-    if (status === 'na_mesa') return pedidos.filter(p => p.status === 'balcao' && p.tipo === 'mesa')
-    if (status === 'balcao')  return pedidos.filter(p => p.status === 'balcao' && p.tipo !== 'mesa').sort.sort((a,b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
-    if (status === 'balcao')  return pedidos.filter(p => p.status === 'balcao' && p.tipo !== 'mesa').sort((a,b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
+    const byTime = (a: any, b: any) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime()
+    if (status === 'na_mesa') return pedidos.filter(p => p.status === 'balcao' && p.tipo === 'mesa').sort(byTime)
+    if (status === 'balcao')  return pedidos.filter(p => p.status === 'balcao' && p.tipo !== 'mesa').sort(byTime)
     return pedidos.filter(p => p.status === status).sort((a,b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
   }
 
