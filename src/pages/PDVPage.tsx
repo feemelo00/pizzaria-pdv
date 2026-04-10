@@ -1,21 +1,19 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { pizzasDb, bebidasDb, outrosDb, bordasDb, ingredientesDb, clientesDb, condominiosDb, pedidosDb, mesasDb } from '../lib/db'
-import type { Mesa } from '../lib/supabase'
 import { useCarrinhoStore, type ItemCarrinho } from '../store/carrinhoStore'
 import { Modal, FormField, Spinner, Empty } from '../components/ui'
 import { Search, Plus, Minus, Trash2, ShoppingCart, UserSearch, X } from 'lucide-react'
-import type { Pizza, Bebida, OutroProduto, Borda, Ingrediente, Cliente } from '../lib/supabase'
+import type { Pizza, Bebida, OutroProduto, Borda, Ingrediente, Cliente, Mesa } from '../lib/supabase'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 
 const TIPOS_PEDIDO = [
-  { value: 'balcao_retirada', label: '🏪 Balcão · Retirada' },
-  { value: 'balcao_delivery', label: '🏪 Balcão · Delivery' },
-  { value: 'mesa',            label: '🪑 Mesa' },
-  { value: 'online_retirada', label: '📱 Online · Retirada' },
-  { value: 'online_delivery', label: '📱 Online · Delivery' },
+  { value: 'retirada', label: '🏪 Retirada' },
+  { value: 'delivery', label: '🛵 Delivery' },
+  { value: 'mesa',     label: '🪑 Mesa' },
 ]
+
 const FORMAS_PAG = [
   { value: 'dinheiro', label: '💵 Dinheiro' },
   { value: 'pix',      label: '📲 PIX' },
@@ -33,19 +31,20 @@ export function PDVPage() {
   const [mesaSelecionada, setMesaSelecionada] = useState<Mesa | null>(null)
   const carrinho = useCarrinhoStore()
 
-  const { data: mesas = [] } = useQuery({ queryKey: ['mesas'], queryFn: mesasDb.listar })
-  const isMesa = carrinho.tipoPedido === 'mesa'
   const { data: pizzas = [] }  = useQuery({ queryKey: ['pizzas-disp'], queryFn: pizzasDb.listarDisponiveis })
   const { data: bebidas = [] } = useQuery({ queryKey: ['bebidas-disp'], queryFn: bebidasDb.listarDisponiveis })
   const { data: outros = [] }  = useQuery({ queryKey: ['outros-disp'],  queryFn: outrosDb.listarDisponiveis })
+  const { data: mesas = [] }   = useQuery({ queryKey: ['mesas'], queryFn: mesasDb.listar })
 
   const { data: clienteData } = useQuery({
     queryKey: ['cliente', carrinho.clienteTelefone],
     queryFn: () => clientesDb.buscar(carrinho.clienteTelefone),
-    enabled: carrinho.clienteTelefone.length >= 10
+    enabled: carrinho.clienteTelefone.length >= 10,
+    retry: false
   })
 
-  const isDelivery = carrinho.tipoPedido.includes('delivery')
+  const isDelivery = carrinho.tipoPedido === 'delivery'
+  const isMesa = carrinho.tipoPedido === 'mesa'
   const frete = isDelivery && clienteData?.condominio ? Number(clienteData.condominio.valor_frete) : 0
   const subtotal = carrinho.getSubtotal()
   const total = subtotal + frete
@@ -53,22 +52,25 @@ export function PDVPage() {
   const { mutate: confirmar, isPending } = useMutation({
     mutationFn: async () => {
       if (!carrinho.itens.length) throw new Error('Adicione pelo menos um item')
-      if (isDelivery && !carrinho.clienteTelefone) throw new Error('Delivery exige cliente cadastrado')
-      if (isDelivery && !clienteData?.condominio_id) throw new Error('Cliente sem condomínio cadastrado')
-      
       if (isMesa && !mesaSelecionada) throw new Error('Selecione uma mesa')
+      if (isDelivery && !carrinho.clienteTelefone) throw new Error('Delivery exige telefone do cliente')
+      if (isDelivery && !clienteData?.condominio_id) throw new Error('Cliente sem condomínio cadastrado')
+
+      const mesaIdAtual = mesaSelecionada?.id || null
+
       const pedidoData = {
         cliente_telefone: carrinho.clienteTelefone || null,
         tipo: carrinho.tipoPedido,
         status: 'solicitado',
         condominio_id: clienteData?.condominio_id || null,
-        mesa_id: mesaSelecionada?.id || null,
+        mesa_id: mesaIdAtual,
         valor_frete: frete,
         valor_total: total,
         forma_pagamento: carrinho.formaPagamento,
         observacao: carrinho.observacaoGeral || null,
         origem: 'pdv'
       }
+
       const itens = carrinho.itens.map(item => ({
         tipo_item: item.tipo_item,
         pizza_id: item.pizza_id || null,
@@ -76,15 +78,17 @@ export function PDVPage() {
         outro_id: item.outro_id || null,
         quantidade: item.quantidade,
         meia_pizza: item.meia_pizza || false,
+        tres_sabores: item.tres_sabores || false,
         pizza_metade_1_id: item.pizza_metade_1_id || null,
         pizza_metade_2_id: item.pizza_metade_2_id || null,
+        pizza_metade_3_id: item.pizza_metade_3_id || null,
         borda_id: item.borda_id || null,
         observacao: item.observacao || null,
         valor_unitario: item.valor_unitario,
-        // passa ingredientes para baixa de estoque
         pizza_ingredientes: item.pizza_ingredientes,
         pizza_metade_1_ingredientes: item.pizza_metade_1_ingredientes,
         pizza_metade_2_ingredientes: item.pizza_metade_2_ingredientes,
+        pizza_metade_3_ingredientes: item.pizza_metade_3_ingredientes,
         adicionais: item.adicionais.map(a => ({
           ingrediente_id: a.ingrediente_id,
           quantidade: a.quantidade,
@@ -92,6 +96,7 @@ export function PDVPage() {
           valor: a.valor
         }))
       }))
+
       return pedidosDb.criar(pedidoData, itens)
     },
     onSuccess: async (pedido) => {
@@ -107,14 +112,14 @@ export function PDVPage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* ── Área esquerda: cardápio ── */}
+      {/* Área esquerda */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Barra superior */}
         <div className="bg-gray-900 border-b border-gray-800 px-4 py-2 space-y-2 flex-shrink-0">
           {/* Tipo pedido */}
           <div className="flex gap-1.5 flex-wrap">
             {TIPOS_PEDIDO.map(t => (
-              <button key={t.value} onClick={() => carrinho.setTipo(t.value)}
+              <button key={t.value} onClick={() => { carrinho.setTipo(t.value); setMesaSelecionada(null) }}
                 className={clsx('text-xs px-3 py-1.5 rounded-lg border transition-all',
                   carrinho.tipoPedido === t.value
                     ? 'bg-pizza-500/20 text-pizza-400 border-pizza-500/40'
@@ -122,8 +127,10 @@ export function PDVPage() {
                 )}>{t.label}</button>
             ))}
           </div>
+
           {/* Busca cliente */}
           <BuscaCliente onAbrirModal={() => setClienteModal(true)} />
+
           {/* Seletor de mesa */}
           {isMesa && (
             <div className="flex items-center gap-2">
@@ -144,96 +151,66 @@ export function PDVPage() {
           )}
         </div>
 
-        {/* Abas cardápio + busca */}
-      <div className="flex items-center border-b border-gray-800 bg-gray-900 flex-shrink-0 gap-2 pr-3">
-        <div className="flex gap-0">
-          {(['pizzas','bebidas','outros'] as const).map(a => (
-            <button key={a} onClick={() => { setAba(a); setBusca('') }}
-              className={clsx('px-5 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize',
-                aba === a ? 'border-pizza-500 text-pizza-400' : 'border-transparent text-gray-500 hover:text-gray-300'
-              )}>
-              {a === 'pizzas' ? '🍕 Pizzas' : a === 'bebidas' ? '🥤 Bebidas' : '🍟 Outros'}
-            </button>
-          ))}
+        {/* Abas + busca */}
+        <div className="flex items-center border-b border-gray-800 bg-gray-900 flex-shrink-0 gap-2 pr-3">
+          <div className="flex gap-0">
+            {(['pizzas','bebidas','outros'] as const).map(a => (
+              <button key={a} onClick={() => { setAba(a); setBusca('') }}
+                className={clsx('px-5 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                  aba === a ? 'border-pizza-500 text-pizza-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+                )}>
+                {a === 'pizzas' ? '🍕 Pizzas' : a === 'bebidas' ? '🥤 Bebidas' : '🍟 Outros'}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 relative max-w-xs">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
+            <input value={busca} onChange={e => setBusca(e.target.value)}
+              placeholder="Buscar..." className="input pl-8 py-1.5 text-xs h-8" />
+            {busca && (
+              <button onClick={() => setBusca('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
+                <X size={13} />
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex-1 relative max-w-xs">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar..."
-            className="input pl-8 py-1.5 text-xs h-8"
-          />
-          {busca && (
-            <button onClick={() => setBusca('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
-              <X size={13} />
-            </button>
-          )}
-        </div>
-      </div>
 
         {/* Grid produtos */}
         <div className="flex-1 overflow-y-auto p-3">
           {aba === 'pizzas' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(pizzas as Pizza[])
-                .filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase()))
-                .map(p => (
-                  <CardProduto key={p.id} nome={p.nome} sub={p.tamanho} preco={p.preco}
-                    onClick={() => setPizzaModal(p)} />
-                ))}
+              {(pizzas as Pizza[]).filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase())).map(p => (
+                <CardProduto key={p.id} nome={p.nome} sub={p.tamanho} preco={p.preco} onClick={() => setPizzaModal(p)} />
+              ))}
               {!(pizzas as Pizza[]).filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase())).length && (
                 <div className="col-span-4">
-                  <Empty icon="🍕" title={busca ? `Nenhuma pizza encontrada para "${busca}"` : 'Nenhuma pizza disponível'} desc={busca ? 'Tente outro termo' : 'Verifique o estoque de ingredientes'} />
+                  <Empty icon="🍕" title={busca ? `Nenhuma pizza para "${busca}"` : 'Nenhuma pizza disponível'} desc={!busca ? 'Verifique o estoque' : undefined} />
                 </div>
               )}
             </div>
           )}
           {aba === 'bebidas' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(bebidas as Bebida[])
-                .filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase()))
-                .map(b => (
-                  <CardProduto key={b.id} nome={b.nome} sub={b.tamanho || ''} preco={b.preco}
-                    onClick={() => {
-                      carrinho.adicionarItem({
-                        _id: crypto.randomUUID(), tipo_item: 'bebida',
-                        bebida_id: b.id, bebida_nome: b.nome,
-                        quantidade: 1, valor_unitario: Number(b.preco), adicionais: []
-                      })
-                      toast.success(`${b.nome} adicionado`, { duration: 1500 })
-                    }} />
-                ))}
-              {!(bebidas as Bebida[]).filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase())).length && (
-                <Empty icon="🥤" title={busca ? `Nenhuma bebida encontrada para "${busca}"` : 'Nenhuma bebida disponível'} />
-              )}
+              {(bebidas as Bebida[]).filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase())).map(b => (
+                <CardProduto key={b.id} nome={b.nome} sub={b.tamanho || ''} preco={b.preco}
+                  onClick={() => { carrinho.adicionarItem({ _id: crypto.randomUUID(), tipo_item: 'bebida', bebida_id: b.id, bebida_nome: b.nome, quantidade: 1, valor_unitario: Number(b.preco), adicionais: [] }); toast.success(`${b.nome} adicionado`, { duration: 1500 }) }} />
+              ))}
+              {!(bebidas as Bebida[]).filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase())).length && <Empty icon="🥤" title="Nenhuma bebida disponível" />}
             </div>
           )}
           {aba === 'outros' && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {(outros as OutroProduto[])
-                .filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase()))
-                .map(o => (
-                  <CardProduto key={o.id} nome={o.nome} sub={o.tamanho || ''} preco={o.preco}
-                    onClick={() => {
-                      carrinho.adicionarItem({
-                        _id: crypto.randomUUID(), tipo_item: 'outro',
-                        outro_id: o.id, outro_nome: o.nome,
-                        quantidade: 1, valor_unitario: Number(o.preco), adicionais: []
-                      })
-                      toast.success(`${o.nome} adicionado`, { duration: 1500 })
-                    }} />
-                ))}
-              {!(outros as OutroProduto[]).filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase())).length && (
-                <Empty icon="🍟" title={busca ? `Nenhum item encontrado para "${busca}"` : 'Nenhum item disponível'} />
-              )}
+              {(outros as OutroProduto[]).filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase())).map(o => (
+                <CardProduto key={o.id} nome={o.nome} sub={o.tamanho || ''} preco={o.preco}
+                  onClick={() => { carrinho.adicionarItem({ _id: crypto.randomUUID(), tipo_item: 'outro', outro_id: o.id, outro_nome: o.nome, quantidade: 1, valor_unitario: Number(o.preco), adicionais: [] }); toast.success(`${o.nome} adicionado`, { duration: 1500 }) }} />
+              ))}
+              {!(outros as OutroProduto[]).filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase())).length && <Empty icon="🍟" title="Nenhum item disponível" />}
             </div>
           )}
         </div>
-</div>
+      </div>
 
-      {/* ── Carrinho direito ── */}
+      {/* Carrinho */}
       <div className="w-72 xl:w-80 flex-shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
           <div className="flex items-center gap-2">
@@ -241,13 +218,10 @@ export function PDVPage() {
             <span className="font-semibold text-gray-200 text-sm">Pedido</span>
           </div>
           {carrinho.itens.length > 0 && (
-            <button onClick={carrinho.limpar} className="text-xs text-gray-600 hover:text-red-400 transition-colors">
-              Limpar
-            </button>
+            <button onClick={carrinho.limpar} className="text-xs text-gray-600 hover:text-red-400 transition-colors">Limpar</button>
           )}
         </div>
 
-        {/* Itens */}
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
           {carrinho.itens.length === 0
             ? <Empty icon="🛒" title="Carrinho vazio" desc="Selecione itens ao lado" />
@@ -255,15 +229,11 @@ export function PDVPage() {
           }
         </div>
 
-        {/* Observação */}
         <div className="px-3 pb-2">
-          <textarea value={carrinho.observacaoGeral}
-            onChange={e => carrinho.setObservacao(e.target.value)}
-            placeholder="Observação geral do pedido..."
-            className="input text-xs resize-none h-14" />
+          <textarea value={carrinho.observacaoGeral} onChange={e => carrinho.setObservacao(e.target.value)}
+            placeholder="Observação geral..." className="input text-xs resize-none h-14" />
         </div>
 
-        {/* Forma pagamento */}
         <div className="px-3 pb-2">
           <div className="grid grid-cols-3 gap-1">
             {FORMAS_PAG.map(f => (
@@ -277,7 +247,6 @@ export function PDVPage() {
           </div>
         </div>
 
-        {/* Totais */}
         <div className="px-3 py-2 border-t border-gray-800 space-y-1">
           <div className="flex justify-between text-xs text-gray-500">
             <span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span>
@@ -293,7 +262,6 @@ export function PDVPage() {
           </div>
         </div>
 
-        {/* Botão confirmar */}
         <div className="p-3 border-t border-gray-800">
           <button onClick={() => confirmar()} disabled={isPending || !carrinho.itens.length}
             className="btn-primary w-full py-3 flex items-center justify-center gap-2">
@@ -304,21 +272,18 @@ export function PDVPage() {
 
       {/* Modais */}
       {pizzaModal && (
-        <ModalPizza
-          pizza={pizzaModal}
-          todasPizzas={pizzas as Pizza[]}
-          onClose={() => setPizzaModal(null)}
-        />
+        <ModalPizza pizza={pizzaModal} todasPizzas={pizzas as Pizza[]} onClose={() => setPizzaModal(null)} />
       )}
-      {/* Modal seleção de mesa */}
+      <ModalCliente open={clienteModal} onClose={() => setClienteModal(false)} />
+
+      {/* Modal mesa */}
       <Modal open={mesaModal} onClose={() => setMesaModal(false)} title="Selecionar Mesa" size="sm">
         <div className="space-y-2">
           {(mesas as Mesa[]).map(mesa => (
             <button key={mesa.id} onClick={() => { setMesaSelecionada(mesa); setMesaModal(false) }}
-              className={clsx(
-                'w-full text-left p-3 rounded-xl border transition-all',
+              className={clsx('w-full text-left p-3 rounded-xl border transition-all',
                 mesa.status === 'ocupada'
-                  ? 'border-orange-700/60 bg-orange-900/10 hover:border-orange-500/60 hover:bg-orange-900/20'
+                  ? 'border-orange-700/60 bg-orange-900/10 hover:border-orange-500/60'
                   : 'border-gray-700 bg-gray-800/30 hover:border-pizza-500/50 hover:bg-pizza-500/10'
               )}>
               <div className="font-medium text-gray-200">{mesa.nome}</div>
@@ -329,15 +294,11 @@ export function PDVPage() {
           ))}
         </div>
       </Modal>
-      <ModalCliente open={clienteModal} onClose={() => setClienteModal(false)} />
     </div>
   )
 }
 
-// ── Card produto ──
-function CardProduto({ nome, sub, preco, onClick }: {
-  nome: string; sub: string; preco: number; onClick: () => void
-}) {
+function CardProduto({ nome, sub, preco, onClick }: { nome: string; sub: string; preco: number; onClick: () => void }) {
   return (
     <button onClick={onClick}
       className="text-left p-3 bg-gray-800/60 hover:bg-gray-800 border border-gray-700/50 hover:border-pizza-500/40 rounded-xl transition-all active:scale-95 group">
@@ -348,15 +309,18 @@ function CardProduto({ nome, sub, preco, onClick }: {
   )
 }
 
-// ── Item no carrinho ──
 function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
   const { removerItem, atualizarQtd } = useCarrinhoStore()
   let desc = ''
   if (item.tipo_item === 'pizza') {
-    desc = item.meia_pizza
-      ? `½ ${item.pizza_metade_1_nome} + ½ ${item.pizza_metade_2_nome}`
-      : item.pizza_nome || ''
-    if (item.borda_nome) desc += ` | Borda: ${item.borda_nome}`
+    if (item.tres_sabores) {
+      desc = `⅓ ${item.pizza_metade_1_nome} + ⅓ ${item.pizza_metade_2_nome} + ⅓ ${item.pizza_metade_3_nome}`
+    } else if (item.meia_pizza) {
+      desc = `½ ${item.pizza_metade_1_nome} + ½ ${item.pizza_metade_2_nome}`
+    } else {
+      desc = item.pizza_nome || ''
+    }
+    if (item.borda_nome) desc += ` | ${item.borda_nome}`
   } else {
     desc = item.bebida_nome || item.outro_nome || ''
   }
@@ -367,10 +331,8 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
     <div className="bg-gray-800/50 rounded-lg border border-gray-700/40 p-2.5">
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-gray-300 leading-tight truncate">{desc}</p>
-          {item.adicionais.length > 0 && (
-            <p className="text-xs text-green-500 mt-0.5">+{item.adicionais.map(a => a.nome).join(', ')}</p>
-          )}
+          <p className="text-xs font-medium text-gray-300 leading-tight">{desc}</p>
+          {item.adicionais.length > 0 && <p className="text-xs text-green-500 mt-0.5">+{item.adicionais.map(a => a.nome).join(', ')}</p>}
           {item.observacao && <p className="text-xs text-yellow-500 italic mt-0.5">{item.observacao}</p>}
         </div>
         <button onClick={() => removerItem(item._id)} className="text-gray-700 hover:text-red-400 flex-shrink-0">
@@ -379,15 +341,9 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
       </div>
       <div className="flex items-center justify-between mt-2">
         <div className="flex items-center gap-1.5">
-          <button onClick={() => atualizarQtd(item._id, item.quantidade - 1)}
-            className="w-6 h-6 rounded border border-gray-700 text-gray-400 hover:border-gray-500 flex items-center justify-center">
-            <Minus size={11} />
-          </button>
+          <button onClick={() => atualizarQtd(item._id, item.quantidade - 1)} className="w-6 h-6 rounded border border-gray-700 text-gray-400 hover:border-gray-500 flex items-center justify-center"><Minus size={11} /></button>
           <span className="text-xs font-bold text-gray-300 w-4 text-center">{item.quantidade}</span>
-          <button onClick={() => atualizarQtd(item._id, item.quantidade + 1)}
-            className="w-6 h-6 rounded border border-gray-700 text-gray-400 hover:border-gray-500 flex items-center justify-center">
-            <Plus size={11} />
-          </button>
+          <button onClick={() => atualizarQtd(item._id, item.quantidade + 1)} className="w-6 h-6 rounded border border-gray-700 text-gray-400 hover:border-gray-500 flex items-center justify-center"><Plus size={11} /></button>
         </div>
         <span className="text-xs font-bold text-gray-200">R$ {precoFinal.toFixed(2)}</span>
       </div>
@@ -395,18 +351,15 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
   )
 }
 
-// ── Busca cliente inline ──
 function BuscaCliente({ onAbrirModal }: { onAbrirModal: () => void }) {
   const { clienteTelefone, setCliente } = useCarrinhoStore()
   const [input, setInput] = useState(clienteTelefone)
-
   const { data: cliente } = useQuery({
     queryKey: ['cliente', input],
     queryFn: () => clientesDb.buscar(input.replace(/\D/g, '')),
     enabled: input.replace(/\D/g, '').length >= 10,
     retry: false
   })
-
   return (
     <div className="flex items-center gap-2">
       <div className="relative flex-1">
@@ -421,72 +374,82 @@ function BuscaCliente({ onAbrirModal }: { onAbrirModal: () => void }) {
           : null
       }
       {(input || clienteTelefone) && (
-        <button onClick={() => { setInput(''); setCliente('') }} className="text-gray-600 hover:text-gray-400">
-          <X size={14} />
-        </button>
+        <button onClick={() => { setInput(''); setCliente('') }} className="text-gray-600 hover:text-gray-400"><X size={14} /></button>
       )}
     </div>
   )
 }
 
-// ── Modal Pizza (inteira ou meio a meio) ──
-function ModalPizza({ pizza, todasPizzas, onClose }: {
-  pizza: Pizza; todasPizzas: Pizza[]; onClose: () => void
-}) {
+// ── Modal Pizza ──
+function ModalPizza({ pizza, todasPizzas, onClose }: { pizza: Pizza; todasPizzas: Pizza[]; onClose: () => void }) {
   const { adicionarItem } = useCarrinhoStore()
-  const [modo, setModo] = useState<'inteira'|'meio'>('inteira')
+  const [modo, setModo] = useState<'inteira'|'meio'|'tres'>('inteira')
   const [sabor2, setSabor2] = useState<Pizza | null>(null)
+  const [sabor3, setSabor3] = useState<Pizza | null>(null)
   const [borda, setBorda] = useState<Borda | null>(null)
   const [adicionais, setAdicionais] = useState<ItemCarrinho['adicionais']>([])
+  const [adicionaisConfig, setAdicionaisConfig] = useState<Record<number, {unidade: string; quantidade: string}>>({})
   const [obs, setObs] = useState('')
   const [qtd, setQtd] = useState(1)
-  const [adicionaisConfig, setAdicionaisConfig] = useState<Record<number, {unidade: string, quantidade: string}>>({})
 
-  const { data: bordas = [] }     = useQuery({ queryKey: ['bordas'], queryFn: bordasDb.listar })
-  const { data: ingsAdic = [] }   = useQuery({ queryKey: ['adicionais'], queryFn: ingredientesDb.listarAdicionais })
-  const { data: pizza1Info } = useQuery({ queryKey: ['pizza', pizza.id], queryFn: () => pizzasDb.listar().then(l => l.find((p: any) => p.id === pizza.id)) })
-  const { data: pizza2Info } = useQuery({ queryKey: ['pizza', sabor2?.id], queryFn: () => sabor2 ? pizzasDb.listar().then(l => l.find((p: any) => p.id === sabor2.id)) : null, enabled: !!sabor2 })
+  const { data: bordas = [] }   = useQuery({ queryKey: ['bordas'], queryFn: bordasDb.listar })
+  const { data: ingsAdic = [] } = useQuery({ queryKey: ['adicionais'], queryFn: ingredientesDb.listarAdicionais })
+  const { data: pizza1Info }    = useQuery({ queryKey: ['pizza', pizza.id], queryFn: () => pizzasDb.listar().then(l => l.find((p: any) => p.id === pizza.id)) })
+  const { data: pizza2Info }    = useQuery({ queryKey: ['pizza', sabor2?.id], queryFn: () => sabor2 ? pizzasDb.listar().then(l => l.find((p: any) => p.id === sabor2.id)) : null, enabled: !!sabor2 })
+  const { data: pizza3Info }    = useQuery({ queryKey: ['pizza', sabor3?.id], queryFn: () => sabor3 ? pizzasDb.listar().then(l => l.find((p: any) => p.id === sabor3.id)) : null, enabled: !!sabor3 })
 
   const calcPreco = () => {
-    let base = modo === 'inteira' ? Number(pizza.preco) : Math.max(Number(pizza.preco), Number(sabor2?.preco || 0))
+    let base = 0
+    if (modo === 'inteira') base = Number(pizza.preco)
+    else if (modo === 'meio') base = Math.max(Number(pizza.preco), Number(sabor2?.preco || 0))
+    else if (modo === 'tres') base = Math.max(Number(pizza.preco), Number(sabor2?.preco || 0), Number(sabor3?.preco || 0))
     if (borda) base += Number(borda.preco)
     return base
   }
+
   const totalAdicionais = adicionais.reduce((a, ad) => a + ad.valor * ad.quantidade, 0)
   const precoTotal = (calcPreco() + totalAdicionais) * qtd
 
-  const toggleAdicionalComQtd = (ing: Ingrediente, aplicado_em: 'inteira'|'metade_1'|'metade_2', qtd: number) => {
-  const existe = adicionais.find(a => a.ingrediente_id === ing.id && a.aplicado_em === aplicado_em)
-  if (existe) {
-    setAdicionais(prev => prev.filter(a => !(a.ingrediente_id === ing.id && a.aplicado_em === aplicado_em)))
-  } else {
-    setAdicionais(prev => [...prev, {
-      ingrediente_id: ing.id,
-      nome: ing.nome,
-      quantidade: qtd,
-      aplicado_em,
-      valor: Number(ing.preco_adicional)
-    }])
+  const converter = (valor: number, de: string, para: string): number => {
+    if (de === para) return valor
+    if (de === 'g'  && para === 'kg') return valor / 1000
+    if (de === 'kg' && para === 'g')  return valor * 1000
+    if (de === 'ml' && para === 'l')  return valor / 1000
+    if (de === 'l'  && para === 'ml') return valor * 1000
+    return valor
   }
-}
-const isSelected = (id: number, em: string) =>
-  adicionais.some(a => a.ingrediente_id === id && a.aplicado_em === em)
+
+  const toggleAdicionalComQtd = (ing: Ingrediente, aplicado_em: 'inteira'|'metade_1'|'metade_2'|'metade_3', qtdVal: number) => {
+    const existe = adicionais.find(a => a.ingrediente_id === ing.id && a.aplicado_em === aplicado_em)
+    if (existe) {
+      setAdicionais(prev => prev.filter(a => !(a.ingrediente_id === ing.id && a.aplicado_em === aplicado_em)))
+    } else {
+      setAdicionais(prev => [...prev, { ingrediente_id: ing.id, nome: ing.nome, quantidade: qtdVal, aplicado_em, valor: Number(ing.preco_adicional) }])
+    }
+  }
+  const isSelected = (id: number, em: string) => adicionais.some(a => a.ingrediente_id === id && a.aplicado_em === em)
 
   const confirmar = () => {
     if (modo === 'meio' && !sabor2) { toast.error('Selecione o 2º sabor'); return }
+    if (modo === 'tres' && (!sabor2 || !sabor3)) { toast.error('Selecione os 3 sabores'); return }
+
     adicionarItem({
       _id: crypto.randomUUID(),
       tipo_item: 'pizza',
       meia_pizza: modo === 'meio',
+      tres_sabores: modo === 'tres',
       pizza_id: modo === 'inteira' ? pizza.id : undefined,
       pizza_nome: modo === 'inteira' ? pizza.nome : undefined,
       pizza_ingredientes: (pizza1Info as any)?.pizza_ingredientes?.map((pi: any) => ({ ingrediente_id: pi.ingrediente_id, quantidade: pi.quantidade })),
-      pizza_metade_1_id: modo === 'meio' ? pizza.id : undefined,
-      pizza_metade_1_nome: modo === 'meio' ? pizza.nome : undefined,
+      pizza_metade_1_id: modo !== 'inteira' ? pizza.id : undefined,
+      pizza_metade_1_nome: modo !== 'inteira' ? pizza.nome : undefined,
       pizza_metade_1_ingredientes: (pizza1Info as any)?.pizza_ingredientes?.map((pi: any) => ({ ingrediente_id: pi.ingrediente_id, quantidade: pi.quantidade })),
       pizza_metade_2_id: sabor2?.id,
       pizza_metade_2_nome: sabor2?.nome,
       pizza_metade_2_ingredientes: (pizza2Info as any)?.pizza_ingredientes?.map((pi: any) => ({ ingrediente_id: pi.ingrediente_id, quantidade: pi.quantidade })),
+      pizza_metade_3_id: modo === 'tres' ? sabor3?.id : undefined,
+      pizza_metade_3_nome: modo === 'tres' ? sabor3?.nome : undefined,
+      pizza_metade_3_ingredientes: modo === 'tres' ? (pizza3Info as any)?.pizza_ingredientes?.map((pi: any) => ({ ingrediente_id: pi.ingrediente_id, quantidade: pi.quantidade })) : undefined,
       borda_id: borda?.id,
       borda_nome: borda?.nome,
       borda_preco: borda ? Number(borda.preco) : undefined,
@@ -499,27 +462,35 @@ const isSelected = (id: number, em: string) =>
     onClose()
   }
 
+  const outrasPizzas = todasPizzas.filter(p => p.id !== pizza.id && (!sabor2 || p.id !== sabor2.id))
+  const pizzasParaSabor2 = todasPizzas.filter(p => p.id !== pizza.id)
+  const pizzasParaSabor3 = todasPizzas.filter(p => p.id !== pizza.id && p.id !== sabor2?.id)
+
   return (
-    <Modal open onClose={onClose} title={modo === 'inteira' ? `🍕 ${pizza.nome}` : '½ Meio a Meio'} size="lg">
+    <Modal open onClose={onClose}
+      title={modo === 'inteira' ? `🍕 ${pizza.nome}` : modo === 'meio' ? '½ Meio a Meio' : '⅓ Três Sabores'}
+      size="lg">
       <div className="space-y-5">
         {/* Modo */}
         <div className="flex gap-2">
-          {(['inteira','meio'] as const).map(m => (
-            <button key={m} onClick={() => { setModo(m); setSabor2(null) }}
+          {([
+            { key: 'inteira', label: '🍕 Inteira' },
+            { key: 'meio',    label: '½ Meio a meio' },
+            { key: 'tres',    label: '⅓ Três sabores' },
+          ] as const).map(m => (
+            <button key={m.key} onClick={() => { setModo(m.key); setSabor2(null); setSabor3(null) }}
               className={clsx('flex-1 py-2 rounded-lg border text-sm font-medium transition-all',
-                modo === m ? 'bg-pizza-500/20 border-pizza-500/50 text-pizza-400' : 'border-gray-700 text-gray-500 hover:border-gray-600'
-              )}>
-              {m === 'inteira' ? '🍕 Pizza inteira' : '½ Meio a meio'}
-            </button>
+                modo === m.key ? 'bg-pizza-500/20 border-pizza-500/50 text-pizza-400' : 'border-gray-700 text-gray-500 hover:border-gray-600'
+              )}>{m.label}</button>
           ))}
         </div>
 
         {/* Sabor 2 */}
-        {modo === 'meio' && (
+        {(modo === 'meio' || modo === 'tres') && (
           <div>
             <label className="label">2º Sabor</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
-              {todasPizzas.filter(p => p.id !== pizza.id).map(p => (
+              {pizzasParaSabor2.map(p => (
                 <button key={p.id} onClick={() => setSabor2(p)}
                   className={clsx('p-2 rounded-lg border text-xs text-left transition-all',
                     sabor2?.id === p.id ? 'border-pizza-500/60 bg-pizza-500/10 text-pizza-300' : 'border-gray-700 text-gray-400 hover:border-gray-600'
@@ -529,9 +500,27 @@ const isSelected = (id: number, em: string) =>
                 </button>
               ))}
             </div>
-            {sabor2 && (
+          </div>
+        )}
+
+        {/* Sabor 3 */}
+        {modo === 'tres' && (
+          <div>
+            <label className="label">3º Sabor</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
+              {pizzasParaSabor3.map(p => (
+                <button key={p.id} onClick={() => setSabor3(p)}
+                  className={clsx('p-2 rounded-lg border text-xs text-left transition-all',
+                    sabor3?.id === p.id ? 'border-pizza-500/60 bg-pizza-500/10 text-pizza-300' : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                  )}>
+                  <div className="font-medium">{p.nome}</div>
+                  <div className="text-gray-600">R$ {Number(p.preco).toFixed(2)}</div>
+                </button>
+              ))}
+            </div>
+            {sabor2 && sabor3 && (
               <p className="text-xs text-pizza-400 mt-2">
-                💰 Preço: maior entre os sabores = R$ {Math.max(Number(pizza.preco), Number(sabor2.preco)).toFixed(2)}
+                💰 Preço: maior entre os 3 sabores = R$ {Math.max(Number(pizza.preco), Number(sabor2.preco), Number(sabor3.preco)).toFixed(2)}
               </p>
             )}
           </div>
@@ -562,102 +551,50 @@ const isSelected = (id: number, em: string) =>
         {(ingsAdic as Ingrediente[]).length > 0 && (
           <div>
             <label className="label">Adicionais</label>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {(ingsAdic as Ingrediente[]).map((ing: Ingrediente) => {
                 const unidadeEstoque = ing.unidade || 'g'
-                const unidadesCompativeis: Record<string, string[]> = {
-                  'kg': ['g', 'kg'], 'g': ['g', 'kg'],
-                  'l': ['ml', 'l'], 'ml': ['ml', 'l'],
-                  'unidade': ['unidade'],
-                }
+                const unidadesCompativeis: Record<string, string[]> = { 'kg': ['g','kg'], 'g': ['g','kg'], 'l': ['ml','l'], 'ml': ['ml','l'], 'unidade': ['unidade'] }
                 const opcoes = unidadesCompativeis[unidadeEstoque] || [unidadeEstoque]
-
-                const converter = (valor: number, de: string, para: string): number => {
-                  if (de === para) return valor
-                  if (de === 'g'  && para === 'kg') return valor / 1000
-                  if (de === 'kg' && para === 'g')  return valor * 1000
-                  if (de === 'ml' && para === 'l')  return valor / 1000
-                  if (de === 'l'  && para === 'ml') return valor * 1000
-                  return valor
-                }
-
                 const estadoAtual = adicionaisConfig[ing.id] || { unidade: opcoes[0], quantidade: '' }
-
-                const selecionados = modo === 'meio'
-                  ? (['metade_1','metade_2','inteira'] as const).filter(em => isSelected(ing.id, em))
-                  : isSelected(ing.id, 'inteira') ? ['inteira'] : []
+                const aplicacoes = modo === 'inteira' ? ['inteira'] : modo === 'meio' ? ['metade_1','metade_2','inteira'] : ['metade_1','metade_2','metade_3','inteira']
 
                 return (
                   <div key={ing.id} className="bg-gray-800/50 rounded-lg p-2.5 space-y-2">
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="text-sm text-gray-300 font-medium">{ing.nome}</span>
-                        <span className="text-xs text-gray-500 ml-2">
-                          estoque em <strong className="text-gray-400">{unidadeEstoque}</strong>
-                        </span>
+                        <span className="text-xs text-gray-500 ml-2">estoque em <strong className="text-gray-400">{unidadeEstoque}</strong></span>
                       </div>
                       <span className="text-xs text-pizza-400">+R${Number(ing.preco_adicional).toFixed(2)}</span>
                     </div>
-
                     <div className="flex items-center gap-2 flex-wrap">
-                      <select
-                        value={estadoAtual.unidade}
-                        onChange={e => setAdicionaisConfig((prev: any) => ({
-                          ...prev, [ing.id]: { ...estadoAtual, unidade: e.target.value }
-                        }))}
+                      <select value={estadoAtual.unidade}
+                        onChange={e => setAdicionaisConfig(prev => ({ ...prev, [ing.id]: { ...estadoAtual, unidade: e.target.value } }))}
                         className="bg-gray-700 border border-gray-600 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none">
                         {opcoes.map(u => <option key={u} value={u}>{u}</option>)}
                       </select>
-                      <input
-                        type="number" step="1" min="0"
-                        value={estadoAtual.quantidade}
+                      <input type="number" step="1" min="0" value={estadoAtual.quantidade}
                         placeholder={`qtd em ${estadoAtual.unidade}`}
-                        onChange={e => setAdicionaisConfig((prev: any) => ({
-                          ...prev, [ing.id]: { ...estadoAtual, quantidade: e.target.value }
-                        }))}
+                        onChange={e => setAdicionaisConfig(prev => ({ ...prev, [ing.id]: { ...estadoAtual, quantidade: e.target.value } }))}
                         className="w-24 bg-gray-700 border border-gray-600 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none" />
                       {estadoAtual.quantidade && (
-                        <span className="text-xs text-gray-500">
-                          = {converter(Number(estadoAtual.quantidade), estadoAtual.unidade, unidadeEstoque).toFixed(4)} {unidadeEstoque}
-                        </span>
+                        <span className="text-xs text-gray-500">= {converter(Number(estadoAtual.quantidade), estadoAtual.unidade, unidadeEstoque).toFixed(4)} {unidadeEstoque}</span>
                       )}
                     </div>
-
-                    {modo === 'meio' ? (
-                      <div className="flex gap-1 flex-wrap">
-                        {(['metade_1','metade_2','inteira'] as const).map(em => (
-                          <button key={em} onClick={() => {
-                            const qtdConvertida = converter(
-                              Number(estadoAtual.quantidade || ing.quantidade_adicional || 1),
-                              estadoAtual.unidade, unidadeEstoque
-                            )
-                            toggleAdicionalComQtd(ing, em, qtdConvertida)
-                          }}
-                            className={clsx('px-2 py-1 text-xs rounded border transition-all',
-                              isSelected(ing.id, em)
-                                ? 'bg-pizza-500/30 border-pizza-500/50 text-pizza-300'
-                                : 'border-gray-700 text-gray-600 hover:border-gray-600'
-                            )}>
-                            {em === 'metade_1' ? '½1' : em === 'metade_2' ? '½2' : 'Toda'}
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <button onClick={() => {
-                        const qtdConvertida = converter(
-                          Number(estadoAtual.quantidade || ing.quantidade_adicional || 1),
-                          estadoAtual.unidade, unidadeEstoque
-                        )
-                        toggleAdicionalComQtd(ing, 'inteira', qtdConvertida)
-                      }}
-                        className={clsx('w-full py-1 text-xs rounded border transition-all',
-                          isSelected(ing.id, 'inteira')
-                            ? 'bg-pizza-500/30 border-pizza-500/50 text-pizza-300'
-                            : 'border-gray-700 text-gray-600 hover:border-gray-600'
-                        )}>
-                        {isSelected(ing.id, 'inteira') ? '✓ Adicionado' : '+ Adicionar'}
-                      </button>
-                    )}
+                    <div className="flex gap-1 flex-wrap">
+                      {aplicacoes.map(em => (
+                        <button key={em} onClick={() => {
+                          const qtdConvertida = converter(Number(estadoAtual.quantidade || ing.quantidade_adicional || 1), estadoAtual.unidade, unidadeEstoque)
+                          toggleAdicionalComQtd(ing, em as any, qtdConvertida)
+                        }}
+                          className={clsx('px-2 py-1 text-xs rounded border transition-all',
+                            isSelected(ing.id, em) ? 'bg-pizza-500/30 border-pizza-500/50 text-pizza-300' : 'border-gray-700 text-gray-600 hover:border-gray-600'
+                          )}>
+                          {em === 'inteira' ? 'Toda' : em === 'metade_1' ? '½1' : em === 'metade_2' ? '½2' : '⅓3'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )
               })}
@@ -676,13 +613,9 @@ const isSelected = (id: number, em: string) =>
       {/* Footer */}
       <div className="flex items-center gap-3 mt-5 pt-4 border-t border-gray-800">
         <div className="flex items-center gap-2 border border-gray-700 rounded-lg">
-          <button onClick={() => setQtd(q => Math.max(1, q - 1))} className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white">
-            <Minus size={14} />
-          </button>
+          <button onClick={() => setQtd(q => Math.max(1, q - 1))} className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white"><Minus size={14} /></button>
           <span className="w-6 text-center font-bold text-gray-200">{qtd}</span>
-          <button onClick={() => setQtd(q => q + 1)} className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white">
-            <Plus size={14} />
-          </button>
+          <button onClick={() => setQtd(q => q + 1)} className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white"><Plus size={14} /></button>
         </div>
         <div className="flex-1">
           <div className="text-xs text-gray-600">Total do item</div>
@@ -694,21 +627,19 @@ const isSelected = (id: number, em: string) =>
   )
 }
 
-// ── Modal Cadastro/Busca Cliente ──
 function ModalCliente({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { setCliente } = useCarrinhoStore()
   const [tel, setTel] = useState('')
   const [form, setForm] = useState({ nome: '', condominio_id: '', quadra: '', lote: '', rua: '' })
   const [modo, setModo] = useState<'busca'|'cadastro'>('busca')
   const [clienteExistente, setClienteExistente] = useState<Cliente | null>(null)
-
   const { data: condominios = [] } = useQuery({ queryKey: ['condominios'], queryFn: condominiosDb.listar })
 
   const buscar = async () => {
     const t = tel.replace(/\D/g, '')
     if (t.length < 10) { toast.error('Telefone inválido'); return }
     const c = await clientesDb.buscar(t)
-    if (c) { setClienteExistente(c); setCliente(t); toast.success(`Cliente encontrado: ${c.nome}`) }
+    if (c) { setClienteExistente(c); setCliente(t); toast.success(`Cliente: ${c.nome}`) }
     else { setClienteExistente(null); setModo('cadastro') }
   }
 
@@ -724,48 +655,30 @@ function ModalCliente({ open, onClose }: { open: boolean; onClose: () => void })
         <div className="flex gap-2">
           <input value={tel} onChange={e => setTel(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscar()}
             placeholder="(00) 00000-0000" className="input flex-1" />
-          <button onClick={buscar} className="btn-secondary px-4 flex-shrink-0">
-            <Search size={16} />
-          </button>
+          <button onClick={buscar} className="btn-secondary px-4 flex-shrink-0"><Search size={16} /></button>
         </div>
-
         {clienteExistente && (
           <div className="p-3 bg-green-900/20 border border-green-800/40 rounded-xl">
             <p className="text-sm font-medium text-green-400">✓ {clienteExistente.nome}</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {(clienteExistente.condominio as any)?.nome} · Q{clienteExistente.quadra} L{clienteExistente.lote}
-            </p>
-            <button onClick={onClose} className="btn-primary mt-3 w-full py-2 text-sm">
-              Usar este cliente
-            </button>
+            <p className="text-xs text-gray-500 mt-0.5">{(clienteExistente.condominio as any)?.nome} · Q{clienteExistente.quadra} L{clienteExistente.lote}</p>
+            <button onClick={onClose} className="btn-primary mt-3 w-full py-2 text-sm">Usar este cliente</button>
           </div>
         )}
-
         {modo === 'cadastro' && !clienteExistente && (
           <div className="space-y-3 border-t border-gray-800 pt-4">
             <p className="text-sm text-gray-500">Cliente não encontrado. Preencha os dados:</p>
-            <FormField label="Nome *">
-              <input value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className="input" />
-            </FormField>
+            <FormField label="Nome *"><input value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className="input" /></FormField>
             <FormField label="Condomínio *">
               <select value={form.condominio_id} onChange={e => setForm(f => ({...f, condominio_id: e.target.value}))} className="input">
                 <option value="">Selecione...</option>
-                {(condominios as any[]).map(c => (
-                  <option key={c.id} value={c.id}>{c.nome} (frete R${Number(c.valor_frete).toFixed(2)})</option>
-                ))}
+                {(condominios as any[]).map(c => <option key={c.id} value={c.id}>{c.nome} (frete R${Number(c.valor_frete).toFixed(2)})</option>)}
               </select>
             </FormField>
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Quadra *">
-                <input value={form.quadra} onChange={e => setForm(f => ({...f, quadra: e.target.value}))} className="input" />
-              </FormField>
-              <FormField label="Lote *">
-                <input value={form.lote} onChange={e => setForm(f => ({...f, lote: e.target.value}))} className="input" />
-              </FormField>
+              <FormField label="Quadra *"><input value={form.quadra} onChange={e => setForm(f => ({...f, quadra: e.target.value}))} className="input" /></FormField>
+              <FormField label="Lote *"><input value={form.lote} onChange={e => setForm(f => ({...f, lote: e.target.value}))} className="input" /></FormField>
             </div>
-            <FormField label="Rua *">
-              <input value={form.rua} onChange={e => setForm(f => ({...f, rua: e.target.value}))} className="input" />
-            </FormField>
+            <FormField label="Rua *"><input value={form.rua} onChange={e => setForm(f => ({...f, rua: e.target.value}))} className="input" /></FormField>
             <button onClick={() => cadastrar()} disabled={isPending || !form.nome || !form.condominio_id}
               className="btn-primary w-full py-2.5 flex items-center justify-center gap-2">
               {isPending ? <Spinner size="sm" /> : 'Cadastrar e selecionar'}

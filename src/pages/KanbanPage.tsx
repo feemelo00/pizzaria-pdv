@@ -93,7 +93,8 @@ export function KanbanPage() {
   })
 
   const porStatus = (status: string) => {
-    if (status === 'na_mesa') return pedidos.filter(p => p.status === 'balcao' && p.tipo === 'mesa').sort((a,b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
+    if (status === 'na_mesa') return pedidos.filter(p => p.status === 'balcao' && p.tipo === 'mesa')
+    if (status === 'balcao')  return pedidos.filter(p => p.status === 'balcao' && p.tipo !== 'mesa').sort.sort((a,b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
     if (status === 'balcao')  return pedidos.filter(p => p.status === 'balcao' && p.tipo !== 'mesa').sort((a,b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
     return pedidos.filter(p => p.status === status).sort((a,b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
   }
@@ -176,7 +177,7 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center flex-wrap gap-1">
           <span className="font-bold text-gray-100 text-lg leading-none">#{pedido.id}</span>
-          {pedido.tipo === 'delivery' && <span className="badge bg-blue-900/40 text-blue-400 border border-blue-800/40">🛵 Delivery</span>}
+          {(pedido.tipo === 'delivery' || pedido.tipo === 'balcao_delivery' || pedido.tipo === 'online_delivery') && <span className="badge bg-blue-900/40 text-blue-400 border border-blue-800/40">🛵 Delivery</span>}
           {pedido.tipo === 'mesa' && pedido.mesa && <span className="badge bg-amber-900/40 text-amber-400 border border-amber-800/40">🪑 {pedido.mesa.nome}</span>}
           {pedido.tipo === 'retirada' && <span className="badge bg-purple-900/40 text-purple-400 border border-purple-800/40">🏪 Retirada</span>}
           {pedido.origem === 'whatsapp' && <span className="badge bg-green-900/40 text-green-400 border border-green-800/40">📱</span>}
@@ -250,14 +251,14 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
           </button>
         )}
 
-        {pedido.status === 'pronto' && pedido.tipo === 'delivery' && (
+        {pedido.status === 'pronto' && (pedido.tipo === 'delivery' || pedido.tipo === 'balcao_delivery' || pedido.tipo === 'online_delivery') && (
           <button onClick={onDespachar}
             className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/20 flex items-center justify-center gap-1">
             <Truck size={11} /> Despachar
           </button>
         )}
 
-        {pedido.status === 'pronto' && pedido.tipo === 'retirada' && (
+        {pedido.status === 'pronto' && (pedido.tipo === 'retirada' || pedido.tipo === 'balcao_retirada' || pedido.tipo === 'online_retirada') && (
           <button onClick={() => onMudar('balcao')}
             className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
             Retirou no balcão <ChevronRight size={11} />

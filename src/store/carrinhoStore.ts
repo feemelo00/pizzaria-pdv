@@ -16,6 +16,10 @@ export interface ItemCarrinho {
   pizza_metade_2_id?: number
   pizza_metade_2_nome?: string
   pizza_metade_2_ingredientes?: { ingrediente_id: number; quantidade: number }[]
+  tres_sabores?: boolean
+  pizza_metade_3_id?: number
+  pizza_metade_3_nome?: string
+  pizza_metade_3_ingredientes?: { ingrediente_id: number; quantidade: number }[]
   // Borda
   borda_id?: number
   borda_nome?: string
