@@ -458,3 +458,55 @@ export const financeiroDb = {
     }
   }
 }
+
+// ============================================================
+// MESAS
+// ============================================================
+export const mesasDb = {
+  listar: async () => {
+    const { data } = await supabase.from('mesas').select('*').order('nome')
+    return data ?? []
+  },
+  criar: async (dados: any) => {
+    const { data, error } = await supabase.from('mesas').insert(dados).select().single()
+    if (error) throw new Error(error.message)
+    return data
+  },
+  atualizar: async (id: number, dados: any) => {
+    const { error } = await supabase.from('mesas').update(dados).eq('id', id)
+    if (error) throw new Error(error.message)
+  },
+  excluir: async (id: number) => {
+    const { error } = await supabase.from('mesas').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+  },
+  ocupar: async (id: number) => {
+    await supabase.from('mesas').update({ status: 'ocupada' }).eq('id', id)
+  },
+  liberar: async (id: number) => {
+    await supabase.from('mesas').update({ status: 'livre' }).eq('id', id)
+  },
+  buscarComanda: async (mesaId: number) => {
+    const { data, error } = await supabase.from('pedidos')
+      .select(`
+        *,
+        itens_pedido(
+          *,
+          pizza:pizzas!itens_pedido_pizza_id_fkey(id, nome, preco),
+          pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(id, nome, preco),
+          pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(id, nome, preco),
+          pizza_metade_3:pizzas!itens_pedido_pizza_metade_3_id_fkey(id, nome, preco),
+          bebida:bebidas(id, nome),
+          outro:outros_produtos(id, nome),
+          borda:bordas(id, nome, preco),
+          adicionais_item(*, ingrediente:ingredientes(id, nome))
+        ),
+        pagamentos(*)
+      `)
+      .eq('mesa_id', mesaId)
+      .not('status', 'in', `(devolvido,finalizado)`)
+      .order('data_criacao', { ascending: true })
+    if (error) console.error('Erro buscarComanda:', error)
+    return data ?? []
+  }
+}
