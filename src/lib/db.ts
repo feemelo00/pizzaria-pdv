@@ -273,7 +273,7 @@ export const pedidosDb = {
         *,
         mesa:mesas(id, nome, status),
         cliente:clientes(nome, telefone, quadra, lote, rua, condominio:condominios(nome, valor_frete)),
-        condominio:condominios(nome, valor_frete),
+        condominio:condominios!pedidos_condominio_id_fkey(nome, valor_frete, tempo_entrega_min),
         motoboy:motoboys(nome),
         itens_pedido(
           *,
@@ -304,7 +304,7 @@ export const pedidosDb = {
   },
   buscarPorId: async (id: number) => {
     const { data } = await supabase.from('pedidos')
-      .select(`*, cliente:clientes(*, condominio:condominios(*)), condominio:condominios(*),
+      .select(`*, cliente:clientes(*, condominio:condominios(*)), condominio:condominios!pedidos_condominio_id_fkey(*),
                motoboy:motoboys(*), itens_pedido(*, pizza:pizzas(*),
                pizza_metade_1:pizzas!pizza_metade_1_id(*), pizza_metade_2:pizzas!pizza_metade_2_id(*),
                bebida:bebidas(*), outro:outros_produtos(*), borda:bordas(*),
