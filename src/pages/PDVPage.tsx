@@ -29,6 +29,7 @@ export function PDVPage() {
   const [busca, setBusca] = useState('')
   const [mesaModal, setMesaModal] = useState(false)
   const [mesaSelecionada, setMesaSelecionada] = useState<Mesa | null>(null)
+  const [modalEnderecoDelivery, setModalEnderecoDelivery] = useState(false)
   const carrinho = useCarrinhoStore()
 
   const { data: pizzas = [] }  = useQuery({ queryKey: ['pizzas-disp'], queryFn: pizzasDb.listarDisponiveis })
@@ -49,26 +50,48 @@ export function PDVPage() {
   const subtotal = carrinho.getSubtotal()
   const total = subtotal + frete
 
+  // Endereço temporário para delivery (não altera cadastro do cliente)
+  const [enderecoTemp, setEnderecoTemp] = useState<{
+    condominio_id: number; condominio_nome: string; valor_frete: number
+    tempo_entrega_min?: number; quadra: string; lote: string; rua: string
+  } | null>(null)
+
+  const freteReal = enderecoTemp ? enderecoTemp.valor_frete : frete
+  const totalReal = subtotal + freteReal
+
+  const confirmarComEndereco = (et: typeof enderecoTemp) => {
+    setEnderecoTemp(et)
+    setTimeout(() => confirmar(), 50)
+  }
+
   const { mutate: confirmar, isPending } = useMutation({
     mutationFn: async () => {
       if (!carrinho.itens.length) throw new Error('Adicione pelo menos um item')
       if (isMesa && !mesaSelecionada) throw new Error('Selecione uma mesa')
       if (isDelivery && !carrinho.clienteTelefone) throw new Error('Delivery exige telefone do cliente')
-      if (isDelivery && !clienteData?.condominio_id) throw new Error('Cliente sem condomínio cadastrado')
+      if (isDelivery && !clienteData?.condominio_id && !enderecoTemp) throw new Error('Cliente sem condomínio cadastrado')
 
       const mesaIdAtual = mesaSelecionada?.id || null
+      const condominioId = enderecoTemp?.condominio_id ?? clienteData?.condominio_id ?? null
+      const freteCalculado = enderecoTemp ? enderecoTemp.valor_frete : frete
+      const totalCalculado = subtotal + freteCalculado
 
       const pedidoData = {
         cliente_telefone: carrinho.clienteTelefone || null,
         tipo: carrinho.tipoPedido,
         status: 'solicitado',
-        condominio_id: clienteData?.condominio_id || null,
+        condominio_id: condominioId,
         mesa_id: mesaIdAtual,
-        valor_frete: frete,
-        valor_total: total,
+        valor_frete: freteCalculado,
+        valor_total: totalCalculado,
         forma_pagamento: carrinho.formaPagamento,
         observacao: carrinho.observacaoGeral || null,
-        origem: 'pdv'
+        origem: 'pdv',
+        // Endereço temporário (se diferente do cadastrado)
+        endereco_temp_condominio_id: enderecoTemp?.condominio_id ?? null,
+        endereco_temp_quadra: enderecoTemp?.quadra ?? null,
+        endereco_temp_lote: enderecoTemp?.lote ?? null,
+        endereco_temp_rua: enderecoTemp?.rua ?? null,
       }
 
       const itens = carrinho.itens.map(item => ({
@@ -105,6 +128,7 @@ export function PDVPage() {
         await mesasDb.ocupar(mesaSelecionada.id)
       }
       setMesaSelecionada(null)
+      setEnderecoTemp(null)
       carrinho.limpar()
     },
     onError: (e: Error) => toast.error(e.message)
@@ -253,17 +277,30 @@ export function PDVPage() {
           </div>
           {isDelivery && (
             <div className="flex justify-between text-xs text-gray-500">
-              <span>Frete ({clienteData?.condominio?.nome || '—'})</span>
-              <span>R$ {frete.toFixed(2)}</span>
+              <span>Frete ({enderecoTemp?.condominio_nome || clienteData?.condominio?.nome || '—'})</span>
+              <span>R$ {freteReal.toFixed(2)}</span>
+            </div>
+          )}
+          {enderecoTemp && (
+            <div className="text-xs text-amber-400 bg-amber-900/20 border border-amber-800/30 rounded px-2 py-1">
+              📍 Entregando em endereço temporário
             </div>
           )}
           <div className="flex justify-between text-base font-bold text-gray-100 pt-1">
-            <span>Total</span><span className="text-pizza-400">R$ {total.toFixed(2)}</span>
+            <span>Total</span><span className="text-pizza-400">R$ {totalReal.toFixed(2)}</span>
           </div>
         </div>
 
         <div className="p-3 border-t border-gray-800">
-          <button onClick={() => confirmar()} disabled={isPending || !carrinho.itens.length}
+          <button
+            onClick={() => {
+              if (isDelivery && carrinho.clienteTelefone && clienteData) {
+                setModalEnderecoDelivery(true)
+              } else {
+                confirmar()
+              }
+            }}
+            disabled={isPending || !carrinho.itens.length}
             className="btn-primary w-full py-3 flex items-center justify-center gap-2">
             {isPending ? <Spinner size="sm" /> : '✅ Confirmar Pedido'}
           </button>
@@ -275,6 +312,18 @@ export function PDVPage() {
         <ModalPizza pizza={pizzaModal} todasPizzas={pizzas as Pizza[]} onClose={() => setPizzaModal(null)} />
       )}
       <ModalCliente open={clienteModal} onClose={() => setClienteModal(false)} />
+
+      {/* Modal endereço delivery */}
+      {modalEnderecoDelivery && clienteData && (
+        <ModalEnderecoDelivery
+          cliente={clienteData}
+          onClose={() => setModalEnderecoDelivery(false)}
+          onConfirmar={(enderecoTemp) => {
+            setModalEnderecoDelivery(false)
+            confirmarComEndereco(enderecoTemp)
+          }}
+        />
+      )}
 
       {/* Modal mesa */}
       <Modal open={mesaModal} onClose={() => setMesaModal(false)} title="Selecionar Mesa" size="sm">
@@ -697,6 +746,165 @@ function ModalCliente({ open, onClose }: { open: boolean; onClose: () => void })
           </div>
         )}
       </div>
+    </Modal>
+  )
+}
+
+// ── Modal Endereço Delivery ──
+function ModalEnderecoDelivery({ cliente, onClose, onConfirmar }: {
+  cliente: any
+  onClose: () => void
+  onConfirmar: (enderecoTemp: any) => void
+}) {
+  const [etapa, setEtapa] = useState<'confirmar'|'atualizar'|'temporario'>('confirmar')
+  const [form, setForm] = useState({ condominio_id: '', quadra: '', lote: '', rua: '' })
+  const { data: condominios = [] } = useQuery({ queryKey: ['condominios'], queryFn: condominiosDb.listar })
+
+  const { mutate: atualizarCadastro, isPending: atualizando } = useMutation({
+    mutationFn: async () => {
+      if (!form.condominio_id) throw new Error('Selecione o condomínio')
+      await clientesDb.atualizar(cliente.telefone, {
+        condominio_id: Number(form.condominio_id),
+        quadra: form.quadra,
+        lote: form.lote,
+        rua: form.rua,
+      })
+      const cond = (condominios as any[]).find(c => c.id === Number(form.condominio_id))
+      return cond
+    },
+    onSuccess: (cond) => {
+      onConfirmar(null) // null = usar endereço do cadastro (recém atualizado)
+    },
+    onError: (e: Error) => toast.error(e.message)
+  })
+
+  const confirmarTemporario = () => {
+    if (!form.condominio_id) { toast.error('Selecione o condomínio'); return }
+    const cond = (condominios as any[]).find(c => c.id === Number(form.condominio_id))
+    if (!cond) { toast.error('Condomínio inválido'); return }
+    onConfirmar({
+      condominio_id: cond.id,
+      condominio_nome: cond.nome,
+      valor_frete: Number(cond.valor_frete),
+      tempo_entrega_min: cond.tempo_entrega_min || 30,
+      quadra: form.quadra,
+      lote: form.lote,
+      rua: form.rua,
+    })
+  }
+
+  const enderecoCadastrado = cliente?.condominio
+    ? `${cliente.condominio.nome} · Q${cliente.quadra} L${cliente.lote}${cliente.rua ? ` · ${cliente.rua}` : ''}`
+    : 'Sem endereço cadastrado'
+
+  return (
+    <Modal open onClose={onClose} title="Confirmar Endereço de Entrega" size="md">
+      {etapa === 'confirmar' && (
+        <div className="space-y-4">
+          <div className="p-4 bg-gray-800/60 rounded-xl border border-gray-700">
+            <p className="text-xs text-gray-500 mb-1">Endereço cadastrado do cliente:</p>
+            <p className="text-sm font-medium text-gray-200">{cliente.nome}</p>
+            <p className="text-sm text-gray-300 mt-1">{enderecoCadastrado}</p>
+            {cliente.condominio && (
+              <p className="text-xs text-pizza-400 mt-1">Frete: R$ {Number(cliente.condominio.valor_frete).toFixed(2)}</p>
+            )}
+          </div>
+          <p className="text-sm text-gray-400 text-center">A entrega será neste endereço?</p>
+          <div className="grid grid-cols-1 gap-2">
+            <button onClick={() => onConfirmar(null)}
+              className="btn-primary py-3 flex items-center justify-center gap-2">
+              ✅ Sim, entregar aqui
+            </button>
+            <button onClick={() => { setEtapa('temporario'); setForm({ condominio_id: '', quadra: '', lote: '', rua: '' }) }}
+              className="btn-secondary py-2.5 flex items-center justify-center gap-2">
+              📍 Não, entregar em outro endereço (temporário)
+            </button>
+            <button onClick={() => { setEtapa('atualizar'); setForm({ condominio_id: String(cliente.condominio_id || ''), quadra: cliente.quadra || '', lote: cliente.lote || '', rua: cliente.rua || '' }) }}
+              className="btn-secondary py-2.5 flex items-center justify-center gap-2">
+              ✏️ Atualizar endereço cadastrado
+            </button>
+          </div>
+        </div>
+      )}
+
+      {etapa === 'temporario' && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <button onClick={() => setEtapa('confirmar')} className="text-gray-500 hover:text-gray-300 text-xs">← Voltar</button>
+            <span className="text-sm font-medium text-gray-300">Endereço temporário</span>
+          </div>
+          <div className="p-3 bg-amber-900/20 border border-amber-800/30 rounded-lg text-xs text-amber-400">
+            📍 Este endereço será usado apenas para este pedido. O cadastro do cliente não será alterado.
+          </div>
+          <FormField label="Condomínio *">
+            <select value={form.condominio_id} onChange={e => setForm(f => ({...f, condominio_id: e.target.value}))} className="input">
+              <option value="">Selecione...</option>
+              {(condominios as any[]).map(c => (
+                <option key={c.id} value={c.id}>{c.nome} — frete R$ {Number(c.valor_frete).toFixed(2)}</option>
+              ))}
+            </select>
+          </FormField>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Quadra *">
+              <input value={form.quadra} onChange={e => setForm(f => ({...f, quadra: e.target.value}))} className="input" placeholder="Ex: 12" />
+            </FormField>
+            <FormField label="Lote *">
+              <input value={form.lote} onChange={e => setForm(f => ({...f, lote: e.target.value}))} className="input" placeholder="Ex: 5" />
+            </FormField>
+          </div>
+          <FormField label="Rua">
+            <input value={form.rua} onChange={e => setForm(f => ({...f, rua: e.target.value}))} className="input" placeholder="Nome da rua (opcional)" />
+          </FormField>
+          {form.condominio_id && (
+            <div className="text-xs text-pizza-400 bg-pizza-900/20 border border-pizza-800/30 rounded px-3 py-2">
+              Frete: R$ {Number((condominios as any[]).find(c => c.id === Number(form.condominio_id))?.valor_frete || 0).toFixed(2)}
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setEtapa('confirmar')} className="btn-secondary flex-1">Cancelar</button>
+            <button onClick={confirmarTemporario} disabled={!form.condominio_id || !form.quadra || !form.lote}
+              className="btn-primary flex-1">Confirmar pedido</button>
+          </div>
+        </div>
+      )}
+
+      {etapa === 'atualizar' && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <button onClick={() => setEtapa('confirmar')} className="text-gray-500 hover:text-gray-300 text-xs">← Voltar</button>
+            <span className="text-sm font-medium text-gray-300">Atualizar endereço cadastrado</span>
+          </div>
+          <div className="p-3 bg-blue-900/20 border border-blue-800/30 rounded-lg text-xs text-blue-400">
+            ✏️ O cadastro do cliente será atualizado permanentemente com este endereço.
+          </div>
+          <FormField label="Condomínio *">
+            <select value={form.condominio_id} onChange={e => setForm(f => ({...f, condominio_id: e.target.value}))} className="input">
+              <option value="">Selecione...</option>
+              {(condominios as any[]).map(c => (
+                <option key={c.id} value={c.id}>{c.nome} — frete R$ {Number(c.valor_frete).toFixed(2)}</option>
+              ))}
+            </select>
+          </FormField>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Quadra *">
+              <input value={form.quadra} onChange={e => setForm(f => ({...f, quadra: e.target.value}))} className="input" />
+            </FormField>
+            <FormField label="Lote *">
+              <input value={form.lote} onChange={e => setForm(f => ({...f, lote: e.target.value}))} className="input" />
+            </FormField>
+          </div>
+          <FormField label="Rua">
+            <input value={form.rua} onChange={e => setForm(f => ({...f, rua: e.target.value}))} className="input" />
+          </FormField>
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setEtapa('confirmar')} className="btn-secondary flex-1">Cancelar</button>
+            <button onClick={() => atualizarCadastro()} disabled={atualizando || !form.condominio_id || !form.quadra || !form.lote}
+              className="btn-primary flex-1 flex items-center justify-center gap-2">
+              {atualizando ? <Spinner size="sm" /> : 'Atualizar e confirmar'}
+            </button>
+          </div>
+        </div>
+      )}
     </Modal>
   )
 }

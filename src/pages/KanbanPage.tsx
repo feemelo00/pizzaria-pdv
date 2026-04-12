@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { pedidosDb, motoboysDb } from '../lib/db'
+import { pedidosDb, motoboysDb, tempoEstimadoDb } from '../lib/db'
 import { supabase } from '../lib/supabase'
 import { StatusBadge, Modal, Spinner } from '../components/ui'
 import { formatDistanceToNow } from 'date-fns'
@@ -25,6 +25,12 @@ export function KanbanPage() {
   const [modalMotoboy, setModalMotoboy] = useState<{ pedidoId: number } | null>(null)
 
   const { data: motoboys = [] } = useQuery({ queryKey: ['motoboys'], queryFn: motoboysDb.listar })
+
+  const { data: tempoEstimado } = useQuery({
+    queryKey: ['tempo-estimado'],
+    queryFn: () => tempoEstimadoDb.calcular(),
+    refetchInterval: 30_000
+  })
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['pedidos-ativos'],
@@ -113,6 +119,13 @@ export function KanbanPage() {
             <span className="text-xs text-green-400">Atualizando a cada 10s</span>
           </div>
           <span className="text-xs text-gray-500">{pedidos.length} ativos</span>
+          {tempoEstimado && (
+            <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1">
+              <span className="text-xs text-gray-500">🍕 {tempoEstimado.pizzasNaFila} na fila</span>
+              <span className="text-xs text-gray-600">|</span>
+              <span className="text-xs text-pizza-400">⏱ ~{tempoEstimado.preparo}min preparo</span>
+            </div>
+          )}
           <button onClick={() => refetch()} className="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 px-2 py-1 rounded">↻</button>
         </div>
       </div>
@@ -191,6 +204,9 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
       {/* Cliente */}
       {pedido.cliente && <p className="text-sm text-gray-300 font-medium leading-none">👤 {pedido.cliente.nome}</p>}
       {pedido.motoboy && <p className="text-xs text-blue-400">🛵 {pedido.motoboy.nome}</p>}
+      {pedido.tipo === 'delivery' && pedido.status === 'delivery' && pedido.condominio && (
+        <p className="text-xs text-gray-500">📍 {(pedido.condominio as any).nome}</p>
+      )}
 
       {/* Itens */}
       <div className="space-y-1">

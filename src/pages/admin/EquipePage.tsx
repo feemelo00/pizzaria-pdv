@@ -1,20 +1,20 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motoboysDb, mesasDb, condominiosDb } from '../../lib/db'
+import { motoboysDb, mesasDb, condominiosDb, configuracoesDb } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
 import { Table, Modal, FormField, ConfirmDialog, Empty, LoadingPage } from '../../components/ui'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-type Aba = 'motoboys' | 'usuarios' | 'mesas' | 'condominios'
+type Aba = 'motoboys' | 'usuarios' | 'mesas' | 'condominios' | 'configuracoes'
 
 export function EquipePage() {
   const [aba, setAba] = useState<Aba>('motoboys')
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="px-5 h-12 border-b border-gray-800 bg-gray-900 flex items-center gap-4 flex-shrink-0">
-        {(['motoboys','usuarios','mesas','condominios'] as Aba[]).map(a => (
+        {(['motoboys','usuarios','mesas','condominios','configuracoes'] as Aba[]).map(a => (
           <button key={a} onClick={() => setAba(a)}
             className={clsx('text-sm font-medium border-b-2 py-3 transition-colors',
               aba === a ? 'border-pizza-500 text-pizza-400' : 'border-transparent text-gray-500 hover:text-gray-300'
@@ -23,6 +23,7 @@ export function EquipePage() {
             {a === 'usuarios'    && '👥 Usuários'}
             {a === 'mesas'       && '🪑 Mesas'}
             {a === 'condominios' && '🏢 Condomínios'}
+            {a === 'configuracoes' && '⚙️ Configurações'}
           </button>
         ))}
       </div>
@@ -31,6 +32,7 @@ export function EquipePage() {
         {aba === 'usuarios'    && <TabUsuarios />}
         {aba === 'mesas'       && <TabMesas />}
         {aba === 'condominios' && <TabCondominios />}
+        {aba === 'configuracoes' && <TabConfiguracoes />}
       </div>
     </div>
   )
@@ -226,6 +228,162 @@ function TabCondominios() {
           <div className="flex gap-2 pt-2"><button onClick={() => setModal(false)} className="btn-secondary flex-1">Cancelar</button><button onClick={() => salvar()} disabled={isPending || !form.nome} className="btn-primary flex-1">Salvar</button></div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+// ============================================================
+// CONFIGURAÇÕES DO SISTEMA
+// ============================================================
+function TabConfiguracoes() {
+  const qc = useQueryClient()
+  const [form, setForm] = useState({ pizzas_simultaneas: '4', tempo_preparo_min: '25' })
+  const [salvando, setSalvando] = useState(false)
+
+  const { data: config, isLoading } = useQuery({
+    queryKey: ['configuracoes'],
+    queryFn: configuracoesDb.buscar,
+    onSuccess: (data: any) => {
+      if (data) setForm({
+        pizzas_simultaneas: String(data.pizzas_simultaneas),
+        tempo_preparo_min: String(data.tempo_preparo_min)
+      })
+    }
+  } as any)
+
+  const { data: condominios = [] } = useQuery({ queryKey: ['condominios'], queryFn: condominiosDb.listarTodos })
+  const [temposEntrega, setTemposEntrega] = useState<Record<number, string>>({})
+  const [salvandoCond, setSalvandoCond] = useState<number | null>(null)
+
+  // Inicializar tempos de entrega dos condomínios
+  useState(() => {
+    if (condominios && (condominios as any[]).length) {
+      const tempos: Record<number, string> = {}
+      ;(condominios as any[]).forEach((c: any) => {
+        tempos[c.id] = String(c.tempo_entrega_min || 30)
+      })
+      setTemposEntrega(tempos)
+    }
+  })
+
+  const salvarConfig = async () => {
+    setSalvando(true)
+    try {
+      await configuracoesDb.salvar({
+        pizzas_simultaneas: Number(form.pizzas_simultaneas),
+        tempo_preparo_min: Number(form.tempo_preparo_min)
+      })
+      qc.invalidateQueries({ queryKey: ['configuracoes'] })
+      toast.success('Configurações salvas!')
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const salvarTempo = async (condId: number) => {
+    setSalvandoCond(condId)
+    try {
+      await condominiosDb.atualizar(condId, { tempo_entrega_min: Number(temposEntrega[condId] || 30) })
+      qc.invalidateQueries({ queryKey: ['condominios'] })
+      toast.success('Tempo salvo!')
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSalvandoCond(null)
+    }
+  }
+
+  // Simular tempo estimado
+  const pizzasSimult = Number(form.pizzas_simultaneas) || 4
+  const tempoPreparo = Number(form.tempo_preparo_min) || 25
+
+  return (
+    <div className="p-4 space-y-6 max-w-2xl">
+      {/* Configurações de preparo */}
+      <div className="card p-5">
+        <h3 className="font-semibold text-gray-200 mb-1">🍕 Capacidade de Preparo</h3>
+        <p className="text-xs text-gray-500 mb-4">Configure quantas pizzas você consegue fazer ao mesmo tempo e o tempo necessário.</p>
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="label">Pizzas simultâneas</label>
+            <input
+              type="number" min="1" max="20"
+              value={form.pizzas_simultaneas}
+              onChange={e => setForm(f => ({...f, pizzas_simultaneas: e.target.value}))}
+              className="input"
+              placeholder="Ex: 4"
+            />
+            <p className="text-xs text-gray-600 mt-1">Quantas pizzas cabem no forno ao mesmo tempo</p>
+          </div>
+          <div>
+            <label className="label">Tempo por lote (minutos)</label>
+            <input
+              type="number" min="1" max="120"
+              value={form.tempo_preparo_min}
+              onChange={e => setForm(f => ({...f, tempo_preparo_min: e.target.value}))}
+              className="input"
+              placeholder="Ex: 25"
+            />
+            <p className="text-xs text-gray-600 mt-1">Minutos para assar {form.pizzas_simultaneas || '?'} pizza(s)</p>
+          </div>
+        </div>
+
+        {/* Simulação visual */}
+        <div className="bg-gray-800/60 rounded-xl p-4 mb-4 space-y-2">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Simulação de tempo</p>
+          {[1, 2, 3, 4, 6, 8].map(qtd => {
+            const lotes = Math.ceil(qtd / pizzasSimult)
+            const tempo = lotes * tempoPreparo
+            return (
+              <div key={qtd} className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">{qtd} pizza{qtd > 1 ? 's' : ''} na fila</span>
+                <span className="text-gray-300">
+                  {lotes} lote{lotes > 1 ? 's' : ''} = <strong className="text-pizza-400">{tempo} min</strong> de preparo
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        <button onClick={salvarConfig} disabled={salvando}
+          className="btn-primary px-6 py-2 flex items-center gap-2">
+          {salvando ? '⏳ Salvando...' : '💾 Salvar configurações'}
+        </button>
+      </div>
+
+      {/* Tempos de entrega por condomínio */}
+      <div className="card p-5">
+        <h3 className="font-semibold text-gray-200 mb-1">🛵 Tempo de Entrega por Condomínio</h3>
+        <p className="text-xs text-gray-500 mb-4">Configure o tempo médio de entrega em minutos para cada condomínio. Este tempo é somado ao tempo de preparo para calcular a estimativa total.</p>
+        {isLoading ? <div className="text-gray-500 text-sm">Carregando...</div> : (
+          <div className="space-y-2">
+            {(condominios as any[]).map(c => (
+              <div key={c.id} className="flex items-center gap-3 bg-gray-800/40 rounded-lg px-3 py-2">
+                <span className="text-sm text-gray-300 flex-1">{c.nome}</span>
+                <span className="text-xs text-gray-600">R$ {Number(c.valor_frete).toFixed(2)}</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number" min="5" max="120"
+                    value={temposEntrega[c.id] || '30'}
+                    onChange={e => setTemposEntrega(prev => ({...prev, [c.id]: e.target.value}))}
+                    className="w-16 bg-gray-700 border border-gray-600 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none"
+                  />
+                  <span className="text-xs text-gray-600">min</span>
+                  <button
+                    onClick={() => salvarTempo(c.id)}
+                    disabled={salvandoCond === c.id}
+                    className="text-xs text-pizza-400 hover:text-pizza-300 border border-pizza-500/30 px-2 py-1 rounded">
+                    {salvandoCond === c.id ? '...' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

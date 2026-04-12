@@ -510,3 +510,80 @@ export const mesasDb = {
     return data ?? []
   }
 }
+
+// ============================================================
+// CONFIGURAÇÕES DO SISTEMA
+// ============================================================
+export const configuracoesDb = {
+  get: async (chave: string) => {
+    const { data } = await supabase.from('configuracoes').select('valor').eq('chave', chave).single()
+    return data?.valor ?? null
+  },
+  set: async (chave: string, valor: string) => {
+    const { error } = await supabase.from('configuracoes')
+      .upsert({ chave, valor, updated_at: new Date().toISOString() }, { onConflict: 'chave' })
+    if (error) throw new Error(error.message)
+  },
+  listar: async () => {
+    const { data } = await supabase.from('configuracoes').select('*').order('chave')
+    return data ?? []
+  },
+  calcularTempoEstimado: async (pizzasNaFila: number, condominioId?: number | null) => {
+    const [capStr, tempoStr] = await Promise.all([
+      configuracoesDb.get('capacidade_pizzas'),
+      configuracoesDb.get('tempo_por_lote_min')
+    ])
+    const capacidade = Number(capStr || 4)
+    const tempoPorLote = Number(tempoStr || 25)
+    const lotes = Math.ceil(pizzasNaFila / capacidade)
+    const tempoPreparo = lotes * tempoPorLote
+
+    let tempoEntrega = 30
+    if (condominioId) {
+      const { data: cond } = await supabase.from('condominios')
+        .select('tempo_entrega_min').eq('id', condominioId).single()
+      if (cond?.tempo_entrega_min) tempoEntrega = cond.tempo_entrega_min
+    }
+
+    return {
+      tempoPreparo,
+      tempoEntrega,
+      total: tempoPreparo + tempoEntrega,
+      lotes,
+      capacidade,
+      tempoPorLote
+    }
+  }
+}
+
+// ============================================================
+// TEMPO ESTIMADO DE ENTREGA
+// ============================================================
+export const tempoEstimadoDb = {
+  calcular: async (condominioId?: number | null): Promise<{ preparo: number; entrega: number; total: number; pizzasNaFila: number }> => {
+    const config = await configuracoesDb.buscar()
+
+    const { data: pedidosAtivos } = await supabase.from('pedidos')
+      .select('itens_pedido(tipo_item, quantidade)')
+      .in('status', ['solicitado', 'fazendo'])
+
+    let pizzasNaFila = 0
+    ;(pedidosAtivos ?? []).forEach((p: any) => {
+      ;(p.itens_pedido ?? []).forEach((item: any) => {
+        if (item.tipo_item === 'pizza') pizzasNaFila += item.quantidade
+      })
+    })
+
+    const lotes = Math.ceil(Math.max(pizzasNaFila, 1) / config.pizzas_simultaneas)
+    const tempoPreparo = lotes * config.tempo_preparo_min
+
+    let tempoEntrega = 30
+    if (condominioId) {
+      const { data: cond } = await supabase.from('condominios')
+        .select('tempo_entrega_min').eq('id', condominioId).single()
+      if (cond?.tempo_entrega_min) tempoEntrega = cond.tempo_entrega_min
+    }
+
+    return { preparo: tempoPreparo, entrega: tempoEntrega, total: tempoPreparo + tempoEntrega, pizzasNaFila }
+  }
+}
