@@ -55,6 +55,85 @@ export function ComandaMesaPage() {
   )
 }
 
+// ── Agrupamento de itens da comanda ──
+function agruparItens(pedidos: any[]): { key: string; nome: string; quantidade: number; valorUnitario: number; total: number; itens: any[]; pedidoStatus: string; itemId: number; pedidoId: number }[] {
+  const mapa: Record<string, any> = {}
+
+  pedidos.forEach(pedido => {
+    ;(pedido.itens_pedido || []).forEach((item: any) => {
+      // Gerar chave única baseada no produto
+      let nome = ''
+      let key = ''
+
+      if (item.meia_pizza) {
+        const n1 = item.pizza_metade_1?.nome || ''
+        const n2 = item.pizza_metade_2?.nome || ''
+        nome = `½ ${n1} + ½ ${n2}`
+        key = `meio-${item.pizza_metade_1_id}-${item.pizza_metade_2_id}`
+      } else if (item.tres_sabores) {
+        const n1 = item.pizza_metade_1?.nome || ''
+        const n2 = item.pizza_metade_2?.nome || ''
+        const n3 = item.pizza_metade_3?.nome || ''
+        nome = `⅓ ${n1} + ⅓ ${n2} + ⅓ ${n3}`
+        key = `tres-${item.pizza_metade_1_id}-${item.pizza_metade_2_id}-${item.pizza_metade_3_id}`
+      } else if (item.pizza_id) {
+        nome = item.pizza?.nome || ''
+        key = `pizza-${item.pizza_id}`
+      } else if (item.bebida_id) {
+        nome = item.bebida?.nome || ''
+        key = `bebida-${item.bebida_id}`
+      } else if (item.outro_id) {
+        nome = item.outro?.nome || ''
+        key = `outro-${item.outro_id}`
+      }
+
+      // Incluir borda na chave se houver
+      if (item.borda_id) {
+        key += `-borda-${item.borda_id}`
+        nome += ` (borda ${item.borda?.nome || ''})`
+      }
+
+      // Incluir adicionais na chave
+      if (item.adicionais_item?.length) {
+        const adKeys = item.adicionais_item.map((a: any) => a.ingrediente_id).sort().join(',')
+        key += `-adic-${adKeys}`
+        nome += ` +${item.adicionais_item.map((a: any) => a.ingrediente?.nome).join(', ')}`
+      }
+
+      // Incluir observação na chave (observações diferentes = itens separados)
+      if (item.observacao) {
+        key += `-obs-${item.observacao}`
+      }
+
+      if (mapa[key]) {
+        mapa[key].quantidade += item.quantidade
+        mapa[key].total += Number(item.valor_unitario) * item.quantidade
+        // Manter referência ao item mais recente e ao status do pedido mais restritivo
+        mapa[key].itens.push({ item, pedidoId: pedido.id, pedidoStatus: pedido.status })
+        // Se algum pedido já está em fazendo ou além, não permite remover
+        if (pedido.status !== 'solicitado') {
+          mapa[key].pedidoStatus = pedido.status
+        }
+      } else {
+        mapa[key] = {
+          key,
+          nome,
+          quantidade: item.quantidade,
+          valorUnitario: Number(item.valor_unitario),
+          total: Number(item.valor_unitario) * item.quantidade,
+          itens: [{ item, pedidoId: pedido.id, pedidoStatus: pedido.status }],
+          pedidoStatus: pedido.status,
+          itemId: item.id,
+          pedidoId: pedido.id,
+          observacao: item.observacao,
+        }
+      }
+    })
+  })
+
+  return Object.values(mapa).sort((a, b) => a.nome.localeCompare(b.nome))
+}
+
 function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa) => void }) {
   const qc = useQueryClient()
   const [modalPagamento, setModalPagamento] = useState(false)
@@ -68,16 +147,25 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
     refetchInterval: 10_000
   })
 
-  const pedidosArr = pedidos as any[]
+  const pedidosArr = (pedidos as any[]).filter(p => (p.itens_pedido || []).length > 0)
+
+  // Calcular totais apenas com pedidos que têm itens
   const totalConsumido = pedidosArr.reduce((acc, p) => acc + Number(p.valor_total || 0), 0)
   const totalPago = pedidosArr.reduce((acc, p) =>
     acc + (p.pagamentos || []).reduce((a: number, pg: any) => a + Number(pg.valor || 0), 0), 0)
   const saldoRestante = totalConsumido - totalPago
 
+  // Agrupar todos os itens de todos os pedidos
+  const itensAgrupados = agruparItens(pedidosArr)
+
+  // Pagamentos totais (de todos os pedidos)
+  const todosPagamentos = pedidosArr.flatMap(p => (p.pagamentos || []))
+
   const { mutate: removerItem, isPending: removendo } = useMutation({
     mutationFn: async ({ item, pedidoId, pedidoStatus }: { item: any; pedidoId: number; pedidoStatus: string }) => {
       if (pedidoStatus !== 'solicitado') throw new Error('Só é possível remover itens de pedidos em "solicitado"')
 
+      // Devolver estoque de bebida/outro
       if (item.tipo_item === 'bebida' && item.bebida_id) {
         const { data: beb } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', item.bebida_id).single()
         if (beb) await supabase.from('bebidas').update({ quantidade_estoque: Number(beb.quantidade_estoque) + Number(item.quantidade) }).eq('id', item.bebida_id)
@@ -87,9 +175,11 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
         if (out) await supabase.from('outros_produtos').update({ quantidade_estoque: Number(out.quantidade_estoque) + Number(item.quantidade) }).eq('id', item.outro_id)
       }
 
+      // Remover adicionais e item
       await supabase.from('adicionais_item').delete().eq('item_pedido_id', item.id)
       await supabase.from('itens_pedido').delete().eq('id', item.id)
 
+      // Recalcular total do pedido
       const { data: restantes } = await supabase.from('itens_pedido').select('valor_unitario, quantidade').eq('pedido_id', pedidoId)
       if (!restantes?.length) {
         await supabase.from('pedidos').delete().eq('id', pedidoId)
@@ -98,7 +188,10 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
         await supabase.from('pedidos').update({ valor_total: novoTotal }).eq('id', pedidoId)
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['comanda', mesa.id] }); toast.success('Item removido!') },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['comanda', mesa.id] })
+      toast.success('Item removido!')
+    },
     onError: (e: Error) => toast.error(e.message)
   })
 
@@ -144,7 +237,7 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
   const imprimirComanda = () => {
     const win = window.open('', '_blank')
     if (!win) return
-    win.document.write(gerarHTMLComanda(mesa, pedidosArr, totalConsumido, totalPago, saldoRestante))
+    win.document.write(gerarHTMLComanda(mesa, itensAgrupados, totalConsumido, totalPago, saldoRestante))
     win.document.close()
     setTimeout(() => win.print(), 500)
   }
@@ -153,6 +246,7 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
       <div className="flex items-center justify-between px-5 h-12 border-b border-gray-800 bg-gray-900 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="font-semibold text-gray-100">{mesa.nome}</h2>
@@ -179,11 +273,13 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
         </div>
       </div>
 
+      {/* Conteúdo */}
       <div className="flex-1 overflow-y-auto p-4">
         {!pedidosArr.length ? (
           <Empty icon="🍽️" title="Nenhum pedido nesta mesa" desc="Abra um pedido pelo PDV selecionando esta mesa" />
         ) : (
           <div className="space-y-4">
+            {/* Resumo financeiro */}
             <div className="grid grid-cols-3 gap-3">
               <div className="card p-4">
                 <div className="text-xs text-gray-500 mb-1">Total consumido</div>
@@ -201,71 +297,79 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
               </div>
             </div>
 
-            <div className="space-y-3">
-              {pedidosArr.map((pedido) => (
-                <div key={pedido.id} className="card p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-gray-200">Pedido #{pedido.id}</span>
-                      <StatusBadge status={pedido.status} />
-                    </div>
-                    <span className="text-xs text-gray-500">
-                      {format(new Date(pedido.data_criacao), 'HH:mm', { locale: ptBR })}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1 mb-3">
-                    {(pedido.itens_pedido || []).map((item: any) => (
-                      <div key={item.id} className="flex items-center justify-between text-sm py-0.5">
-                        <span className="text-gray-400 flex-1">
-                          {item.quantidade}x {item.meia_pizza
-                            ? `½ ${item.pizza_metade_1?.nome} + ½ ${item.pizza_metade_2?.nome}`
-                            : item.pizza?.nome || item.bebida?.nome || item.outro?.nome}
-                          {item.borda && ` (borda ${item.borda.nome})`}
-                          {(item.adicionais_item || []).length > 0 && (
-                            <span className="text-green-500 ml-1">
-                              +{item.adicionais_item.map((a: any) => a.ingrediente?.nome).join(', ')}
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-gray-300 font-medium mx-3">
-                          R$ {(Number(item.valor_unitario) * Number(item.quantidade)).toFixed(2)}
-                        </span>
-                        {pedido.status === 'solicitado' && (
-                          <button
-                            onClick={() => removerItem({ item, pedidoId: pedido.id, pedidoStatus: pedido.status })}
-                            disabled={removendo}
-                            title="Remover item (devolve estoque)"
-                            className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0">
-                            <Trash2 size={13} />
-                          </button>
+            {/* Itens agrupados */}
+            <div className="card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-gray-200 text-sm">🍽️ Itens consumidos</h3>
+                <span className="text-xs text-gray-500">{pedidosArr.length} pedido{pedidosArr.length > 1 ? 's' : ''}</span>
+              </div>
+              <div className="space-y-2">
+                {itensAgrupados.map((grupo) => (
+                  <div key={grupo.key} className="flex items-center justify-between py-2 border-b border-gray-800/60 last:border-0">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-pizza-400 w-8">{grupo.quantidade}x</span>
+                        <span className="text-sm text-gray-300">{grupo.nome}</span>
+                        {/* Status badge se algum ainda está solicitado */}
+                        {grupo.itens.some((i: any) => i.pedidoStatus === 'solicitado') && (
+                          <span className="badge bg-yellow-900/40 text-yellow-400 border border-yellow-800/40 text-xs">aguardando</span>
                         )}
                       </div>
-                    ))}
-                  </div>
-
-                  <div className="flex justify-between text-sm font-bold border-t border-gray-800 pt-2">
-                    <span className="text-gray-300">Subtotal</span>
-                    <span className="text-gray-100">R$ {Number(pedido.valor_total).toFixed(2)}</span>
-                  </div>
-
-                  {(pedido.pagamentos || []).length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {(pedido.pagamentos || []).map((pg: any, i: number) => (
-                        <div key={i} className="flex justify-between text-xs text-green-500">
-                          <span>✓ Pago ({pg.metodo})</span>
-                          <span>R$ {Number(pg.valor).toFixed(2)}</span>
-                        </div>
-                      ))}
+                      {grupo.observacao && (
+                        <p className="text-xs text-yellow-500 italic ml-8 mt-0.5">💬 {grupo.observacao}</p>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium text-gray-200">R$ {grupo.total.toFixed(2)}</span>
+                      {/* Botão remover — só para itens de pedidos em solicitado */}
+                      {grupo.itens.some((i: any) => i.pedidoStatus === 'solicitado') && (
+                        <button
+                          onClick={() => {
+                            // Pegar o primeiro item solicitado do grupo para remover
+                            const itemSolicitado = grupo.itens.find((i: any) => i.pedidoStatus === 'solicitado')
+                            if (itemSolicitado) {
+                              removerItem({
+                                item: itemSolicitado.item,
+                                pedidoId: itemSolicitado.pedidoId,
+                                pedidoStatus: itemSolicitado.pedidoStatus
+                              })
+                            }
+                          }}
+                          disabled={removendo}
+                          title="Remover 1 unidade (devolve estoque)"
+                          className="text-gray-600 hover:text-red-400 transition-colors">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between font-bold border-t border-gray-700 pt-3 mt-2">
+                <span className="text-gray-300">Total</span>
+                <span className="text-gray-100">R$ {totalConsumido.toFixed(2)}</span>
+              </div>
             </div>
+
+            {/* Pagamentos registrados */}
+            {todosPagamentos.length > 0 && (
+              <div className="card p-4">
+                <h3 className="font-semibold text-gray-200 text-sm mb-3">💳 Pagamentos registrados</h3>
+                <div className="space-y-1">
+                  {todosPagamentos.map((pg: any, i: number) => (
+                    <div key={i} className="flex justify-between text-sm">
+                      <span className="text-green-400">✓ {pg.metodo}</span>
+                      <span className="text-green-400 font-medium">R$ {Number(pg.valor).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
+      {/* Modal pagamento */}
       <Modal open={modalPagamento} onClose={() => setModalPagamento(false)} title="Registrar Pagamento" size="sm">
         <div className="space-y-4">
           <div className="p-3 bg-gray-800/60 rounded-xl text-sm">
@@ -299,6 +403,7 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
         </div>
       </Modal>
 
+      {/* Modal fechar mesa */}
       <Modal open={modalFechar} onClose={() => setModalFechar(false)} title="Fechar Mesa" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-gray-400">
@@ -317,18 +422,13 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
   )
 }
 
-function gerarHTMLComanda(mesa: any, pedidos: any[], total: number, pago: number, restante: number): string {
-  const itensHTML = pedidos.map(p => {
-    const itens = (p.itens_pedido || []).map((item: any) =>
-      `<div class="item">
-        <span>${item.quantidade}x ${item.meia_pizza
-          ? `½ ${item.pizza_metade_1?.nome} + ½ ${item.pizza_metade_2?.nome}`
-          : item.pizza?.nome || item.bebida?.nome || item.outro?.nome || ''}</span>
-        <span>R$ ${(Number(item.valor_unitario) * Number(item.quantidade)).toFixed(2)}</span>
-      </div>`
-    ).join('')
-    return `<div class="pedido"><div class="label">Pedido #${p.id}</div>${itens}</div>`
-  }).join('<div class="divider"></div>')
+function gerarHTMLComanda(mesa: any, itens: any[], total: number, pago: number, restante: number): string {
+  const itensHTML = itens.map(grupo =>
+    `<div class="item">
+      <span>${grupo.quantidade}x ${grupo.nome}${grupo.observacao ? ` (${grupo.observacao})` : ''}</span>
+      <span>R$ ${grupo.total.toFixed(2)}</span>
+    </div>`
+  ).join('')
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
   <style>
@@ -343,6 +443,7 @@ function gerarHTMLComanda(mesa: any, pedidos: any[], total: number, pago: number
     <h1>🍕 COMANDA</h1>
     <div style="text-align:center;font-size:14px;font-weight:bold;margin-bottom:8px">${mesa.nome}</div>
     <div class="divider"></div>
+    <div class="label">Itens</div>
     ${itensHTML}
     <div class="divider"></div>
     <div class="item total"><span>TOTAL</span><span>R$ ${total.toFixed(2)}</span></div>
