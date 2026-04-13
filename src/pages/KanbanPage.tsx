@@ -202,7 +202,17 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
       </div>
 
       {/* Cliente */}
-      {pedido.cliente && <p className="text-sm text-gray-300 font-medium leading-none">👤 {pedido.cliente.nome}</p>}
+      {pedido.cliente && (
+        <div>
+          <p className="text-sm text-gray-300 font-medium leading-none">👤 {pedido.cliente.nome}</p>
+          {pedido.origem === 'whatsapp' && (
+            <p className="text-xs text-gray-600 mt-0.5">📱 {pedido.cliente_telefone}</p>
+          )}
+          {pedido.origem !== 'whatsapp' && pedido.cliente_telefone && (
+            <p className="text-xs text-gray-600 mt-0.5">📞 {pedido.cliente_telefone}</p>
+          )}
+        </div>
+      )}
       {pedido.motoboy && <p className="text-xs text-blue-400">🛵 {pedido.motoboy.nome}</p>}
       {pedido.tipo === 'delivery' && pedido.status === 'delivery' && pedido.condominio && (
         <p className="text-xs text-gray-500">📍 {(pedido.condominio as any).nome}</p>

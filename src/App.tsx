@@ -15,6 +15,7 @@ import { CardapioPage } from './pages/admin/CardapioPage'
 import { EstoquePage } from './pages/admin/EstoquePage'
 import { EquipePage } from './pages/admin/EquipePage'
 import { Spinner } from './components/ui'
+import { WhatsAppPage, AlertasWhatsApp } from './pages/WhatsAppPage'
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } }
@@ -42,6 +43,7 @@ export default function App() {
           style: { background: '#1f2937', color: '#f3f4f6', border: '1px solid #374151', borderRadius: '10px' },
           success: { iconTheme: { primary: '#f97316', secondary: '#fff' } }
         }} />
+        <AlertasWhatsApp />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
@@ -56,6 +58,7 @@ export default function App() {
             <Route path="admin/cardapio" element={<ProtectedRoute onlyAdmin><CardapioPage /></ProtectedRoute>} />
             <Route path="admin/estoque"  element={<ProtectedRoute onlyAdmin><EstoquePage /></ProtectedRoute>} />
             <Route path="admin/equipe"   element={<ProtectedRoute onlyAdmin><EquipePage /></ProtectedRoute>} />
+            <Route path="whatsapp" element={<WhatsAppPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/pdv" replace />} />
         </Routes>

@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   ShoppingCart, KanbanSquare, Settings, LogOut,
   Package, Users, BarChart3, UtensilsCrossed,
-  ClipboardList, History, TrendingUp
+  ClipboardList, History, TrendingUp, MessageCircle
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '../../store/authStore'
@@ -11,7 +11,8 @@ import toast from 'react-hot-toast'
 const navFuncionario = [
   { to: '/pdv',    icon: ShoppingCart,  label: 'PDV' },
   { to: '/kanban', icon: KanbanSquare,  label: 'Kanban' },
-  { to: '/mesas',  icon: ClipboardList, label: 'Mesas' },
+  { to: '/mesas',     icon: ClipboardList,  label: 'Mesas' },
+  { to: '/whatsapp',  icon: MessageCircle,  label: 'WhatsApp' },
 ]
 
 const navAdmin = [
