@@ -274,6 +274,7 @@ export const pedidosDb = {
         mesa:mesas(id, nome, status),
         cliente:clientes(nome, telefone, quadra, lote, rua, condominio:condominios(nome, valor_frete)),
         condominio:condominios!pedidos_condominio_id_fkey(nome, valor_frete, tempo_entrega_min),
+        endereco_temp_condominio:condominios!pedidos_endereco_temp_condominio_id_fkey(nome),
         motoboy:motoboys(nome),
         itens_pedido(
           *,
@@ -290,7 +291,11 @@ export const pedidosDb = {
       .in('status', ['solicitado','fazendo','pronto','delivery','balcao'])
       .order('data_criacao', { ascending: true })
     if (error) console.error('listarAtivos erro:', error)
-    return data ?? []
+    // Normalizar nome do condomínio temporário para facilitar uso nos componentes
+    return (data ?? []).map((p: any) => ({
+      ...p,
+      endereco_temp_condominio_nome: p.endereco_temp_condominio?.nome ?? null,
+    }))
   },
   listar: async (filtros?: { data?: string; status?: string; clienteTelefone?: string }) => {
     let q = supabase.from('pedidos')
@@ -409,7 +414,77 @@ export const pedidosDb = {
   atualizar: async (id: number, dados: any) => {
     const { error } = await supabase.from('pedidos').update(dados).eq('id', id)
     if (error) throw new Error(error.message)
-  }
+  },
+
+  // [MELHORIA 3] Cancelar pedido com motivo opcional — devolve estoque
+  cancelar: async (id: number, motivo?: string) => {
+    const { data: itens } = await supabase.from('itens_pedido')
+      .select('*, pizza:pizzas!itens_pedido_pizza_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(pizza_ingredientes(ingrediente_id, quantidade))')
+      .eq('pedido_id', id)
+
+    for (const item of (itens || [])) {
+      const qtd = item.quantidade || 1
+      if (item.tipo_item === 'bebida' && item.bebida_id) {
+        const { data } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', item.bebida_id).single()
+        if (data) await supabase.from('bebidas').update({ quantidade_estoque: Number(data.quantidade_estoque) + qtd }).eq('id', item.bebida_id)
+      }
+      if (item.tipo_item === 'outro' && item.outro_id) {
+        const { data } = await supabase.from('outros_produtos').select('quantidade_estoque').eq('id', item.outro_id).single()
+        if (data) await supabase.from('outros_produtos').update({ quantidade_estoque: Number(data.quantidade_estoque) + qtd }).eq('id', item.outro_id)
+      }
+      if (item.tipo_item === 'pizza') {
+        const ingredientes = [
+          ...((item.pizza as any)?.pizza_ingredientes || []),
+          ...((item.pizza_metade_1 as any)?.pizza_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
+          ...((item.pizza_metade_2 as any)?.pizza_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
+        ]
+        const mapa: Record<number, number> = {}
+        ingredientes.forEach((pi: any) => {
+          mapa[pi.ingrediente_id] = (mapa[pi.ingrediente_id] || 0) + pi.quantidade * qtd
+        })
+        for (const [ingId, qtdDevolver] of Object.entries(mapa)) {
+          const { data } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', ingId).single()
+          if (data) await supabase.from('ingredientes').update({ quantidade_estoque: Number(data.quantidade_estoque) + qtdDevolver }).eq('id', ingId)
+        }
+      }
+    }
+
+    const { error } = await supabase.from('pedidos').update({
+      status: 'devolvido',
+      motivo_cancelamento: motivo || null,
+    }).eq('id', id)
+    if (error) throw new Error(error.message)
+  },
+
+  // [MELHORIA 2] Buscar pedido ativo individual com todos os dados (usado após edição)
+  buscarAtivo: async (id: number) => {
+    const { data } = await supabase.from('pedidos')
+      .select(`
+        *,
+        mesa:mesas(id, nome, status),
+        cliente:clientes(nome, telefone, quadra, lote, rua, condominio:condominios(nome, valor_frete)),
+        condominio:condominios!pedidos_condominio_id_fkey(nome, valor_frete, tempo_entrega_min),
+        endereco_temp_condominio:condominios!pedidos_endereco_temp_condominio_id_fkey(nome),
+        motoboy:motoboys(nome),
+        itens_pedido(
+          *,
+          pizza:pizzas!itens_pedido_pizza_id_fkey(id, nome, preco),
+          pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(id, nome, preco),
+          pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(id, nome, preco),
+          pizza_metade_3:pizzas!itens_pedido_pizza_metade_3_id_fkey(id, nome, preco),
+          bebida:bebidas(id, nome),
+          outro:outros_produtos(id, nome),
+          borda:bordas(id, nome, preco),
+          adicionais_item(*, ingrediente:ingredientes(id, nome, preco_adicional))
+        )
+      `)
+      .eq('id', id).single()
+    if (!data) return null
+    return {
+      ...data,
+      endereco_temp_condominio_nome: (data as any).endereco_temp_condominio?.nome ?? null,
+    }
+  },
 }
 
 // ============================================================

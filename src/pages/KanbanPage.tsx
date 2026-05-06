@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { pedidosDb, motoboysDb, tempoEstimadoDb } from '../lib/db'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { pedidosDb, motoboysDb, tempoEstimadoDb, pizzasDb, bebidasDb, bordasDb, ingredientesDb } from '../lib/db'
 import { supabase } from '../lib/supabase'
 import { StatusBadge, Modal, Spinner } from '../components/ui'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Printer, ChevronRight, AlertTriangle, Truck } from 'lucide-react'
+import { Printer, ChevronRight, AlertTriangle, Truck, Pencil, X, Plus, Trash2 } from 'lucide-react'
 import type { StatusPedido, Motoboy } from '../lib/supabase'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -23,6 +23,9 @@ export function KanbanPage() {
   const [pedidos, setPedidos] = useState<any[]>([])
   const [ultimoCount, setUltimoCount] = useState(0)
   const [modalMotoboy, setModalMotoboy] = useState<{ pedidoId: number } | null>(null)
+  const [modalCancelar, setModalCancelar] = useState<{ pedido: any } | null>(null)
+  const [modalEditar, setModalEditar] = useState<{ pedido: any } | null>(null)
+  const queryClient = useQueryClient()
 
   const { data: motoboys = [] } = useQuery({ queryKey: ['motoboys'], queryFn: motoboysDb.listar })
 
@@ -73,6 +76,20 @@ export function KanbanPage() {
     onError: (err: Error) => toast.error(err.message)
   })
 
+  // ── [MELHORIA 3] Cancelar com motivo ──────────────────────────
+  const { mutate: cancelarPedido, isPending: cancelando } = useMutation({
+    mutationFn: async ({ pedidoId, motivo }: { pedidoId: number; motivo: string }) => {
+      await pedidosDb.cancelar(pedidoId, motivo)
+    },
+    onSuccess: (_, { pedidoId }) => {
+      setPedidos(prev => prev.filter(p => p.id !== pedidoId))
+      setModalCancelar(null)
+      toast.success('Pedido cancelado')
+      setTimeout(() => refetch(), 500)
+    },
+    onError: (e: Error) => toast.error(e.message)
+  })
+
   const { mutate: despacharDelivery, isPending: despachando } = useMutation({
     mutationFn: async ({ pedidoId, motoboyId }: { pedidoId: number; motoboyId: number }) => {
       await pedidosDb.atualizarStatus(pedidoId, 'delivery', { motoboy_id: motoboyId })
@@ -86,7 +103,6 @@ export function KanbanPage() {
       const motoboy = (motoboys as Motoboy[]).find(m => m.id === motoboyId)
       setPedidos(prev => prev.map(p => p.id === pedidoId ? { ...p, status: 'delivery', motoboy, motoboy_id: motoboyId } : p))
       setModalMotoboy(null)
-      // Imprimir nota de entrega
       const pedido = pedidos.find(p => p.id === pedidoId)
       if (pedido && motoboy) {
         const win = window.open('', '_blank')
@@ -103,6 +119,12 @@ export function KanbanPage() {
     if (status === 'na_mesa') return pedidos.filter(p => p.status === 'balcao' && p.tipo === 'mesa').sort(byTime)
     if (status === 'balcao')  return pedidos.filter(p => p.status === 'balcao' && p.tipo !== 'mesa').sort(byTime)
     return pedidos.filter(p => p.status === status).sort((a,b) => new Date(a.data_criacao).getTime() - new Date(b.data_criacao).getTime())
+  }
+
+  const onPedidoEditado = (pedidoAtualizado: any) => {
+    setPedidos(prev => prev.map(p => p.id === pedidoAtualizado.id ? pedidoAtualizado : p))
+    setModalEditar(null)
+    setTimeout(() => refetch(), 500)
   }
 
   if (isLoading && !pedidos.length) return (
@@ -145,6 +167,8 @@ export function KanbanPage() {
                     <KanbanCard key={pedido.id} pedido={pedido}
                       onMudar={(status) => mudarStatus({ id: pedido.id, status })}
                       onDespachar={() => setModalMotoboy({ pedidoId: pedido.id })}
+                      onCancelar={() => setModalCancelar({ pedido })}
+                      onEditar={() => setModalEditar({ pedido })}
                     />
                   ))
               }
@@ -161,14 +185,38 @@ export function KanbanPage() {
         onConfirm={(motoboyId) => despacharDelivery({ pedidoId: modalMotoboy!.pedidoId, motoboyId })}
         isPending={despachando}
       />
+
+      {/* [MELHORIA 3] Modal cancelamento com motivo */}
+      {modalCancelar && (
+        <ModalCancelar
+          pedido={modalCancelar.pedido}
+          onClose={() => setModalCancelar(null)}
+          onConfirm={(motivo) => cancelarPedido({ pedidoId: modalCancelar.pedido.id, motivo })}
+          isPending={cancelando}
+        />
+      )}
+
+      {/* [MELHORIA 2] Modal edição de pedido */}
+      {modalEditar && (
+        <ModalEditarPedido
+          pedido={modalEditar.pedido}
+          onClose={() => setModalEditar(null)}
+          onSalvo={onPedidoEditado}
+        />
+      )}
     </div>
   )
 }
 
-function KanbanCard({ pedido, onMudar, onDespachar }: {
+// ─────────────────────────────────────────────────────────────
+// KanbanCard
+// ─────────────────────────────────────────────────────────────
+function KanbanCard({ pedido, onMudar, onDespachar, onCancelar, onEditar }: {
   pedido: any
   onMudar: (status: StatusPedido) => void
   onDespachar: () => void
+  onCancelar: () => void
+  onEditar: () => void
 }) {
   const minutos = Math.floor((Date.now() - new Date(pedido.data_criacao).getTime()) / 60000)
   const atrasado = ['fazendo','solicitado'].includes(pedido.status) && minutos > 30
@@ -214,8 +262,14 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
         </div>
       )}
       {pedido.motoboy && <p className="text-xs text-blue-400">🛵 {pedido.motoboy.nome}</p>}
-      {pedido.tipo === 'delivery' && pedido.status === 'delivery' && pedido.condominio && (
-        <p className="text-xs text-gray-500">📍 {(pedido.condominio as any).nome}</p>
+
+      {/* [MELHORIA 1] Mostrar endereço temporário se existir */}
+      {(pedido.tipo === 'delivery' || pedido.tipo?.includes('delivery')) && (
+        pedido.endereco_temp_condominio_id
+          ? <p className="text-xs text-amber-400">📍 {pedido.endereco_temp_condominio_nome || 'Endereço temp.'} · Q{pedido.endereco_temp_quadra} L{pedido.endereco_temp_lote}</p>
+          : pedido.condominio && pedido.status === 'delivery' && (
+              <p className="text-xs text-gray-500">📍 {pedido.condominio.nome}</p>
+            )
       )}
 
       {/* Itens */}
@@ -252,14 +306,22 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
           <Printer size={14} />
         </button>
 
+        {/* [MELHORIA 2] Botão editar — só para status "solicitado" */}
+        {pedido.status === 'solicitado' && (
+          <button onClick={onEditar} className="btn-ghost p-1.5 text-gray-600 hover:text-blue-400" title="Editar pedido">
+            <Pencil size={14} />
+          </button>
+        )}
+
         {pedido.status === 'solicitado' && <>
           <button onClick={() => onMudar('fazendo')}
             className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
             Iniciar <ChevronRight size={11} />
           </button>
-          <button onClick={() => onMudar('devolvido')}
+          {/* [MELHORIA 3] Substituiu "Devolver" por "Cancelar" com motivo */}
+          <button onClick={onCancelar}
             className="text-xs py-1.5 px-2 rounded-lg font-medium bg-red-900/30 text-red-400 border border-red-900/30">
-            Devolver
+            Cancelar
           </button>
         </>}
 
@@ -296,7 +358,7 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
             className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
             Finalizar <ChevronRight size={11} />
           </button>
-          <button onClick={() => onMudar('devolvido')}
+          <button onClick={onCancelar}
             className="text-xs py-1.5 px-2 rounded-lg font-medium bg-red-900/30 text-red-400 border border-red-900/30">
             Devolver
           </button>
@@ -307,7 +369,7 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
             className="flex-1 text-xs py-1.5 px-2 rounded-lg font-medium bg-pizza-500/20 text-pizza-400 hover:bg-pizza-500/30 border border-pizza-500/20 flex items-center justify-center gap-1">
             Finalizar <ChevronRight size={11} />
           </button>
-          <button onClick={() => onMudar('devolvido')}
+          <button onClick={onCancelar}
             className="text-xs py-1.5 px-2 rounded-lg font-medium bg-red-900/30 text-red-400 border border-red-900/30">
             Devolver
           </button>
@@ -323,6 +385,49 @@ function KanbanCard({ pedido, onMudar, onDespachar }: {
   )
 }
 
+// ─────────────────────────────────────────────────────────────
+// [MELHORIA 3] Modal Cancelar com motivo
+// ─────────────────────────────────────────────────────────────
+function ModalCancelar({ pedido, onClose, onConfirm, isPending }: {
+  pedido: any
+  onClose: () => void
+  onConfirm: (motivo: string) => void
+  isPending: boolean
+}) {
+  const [motivo, setMotivo] = useState('')
+
+  return (
+    <Modal open onClose={onClose} title={`Cancelar Pedido #${pedido.id}`} size="sm">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-400">
+          Tem certeza que deseja cancelar este pedido? O estoque será devolvido automaticamente.
+        </p>
+        <div>
+          <label className="label">Motivo do cancelamento <span className="text-gray-600 normal-case">(opcional)</span></label>
+          <textarea
+            value={motivo}
+            onChange={e => setMotivo(e.target.value)}
+            placeholder="Ex: Cliente desistiu, endereço errado, fora da área de entrega..."
+            className="input resize-none h-20 text-sm"
+          />
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="btn-secondary flex-1">Voltar</button>
+          <button
+            onClick={() => onConfirm(motivo)}
+            disabled={isPending}
+            className="btn-danger flex-1 flex items-center justify-center gap-2">
+            {isPending ? <Spinner size="sm" /> : '✕ Confirmar Cancelamento'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Modal Motoboy
+// ─────────────────────────────────────────────────────────────
 function ModalMotoboy({ open, motoboys, onClose, onConfirm, isPending }: {
   open: boolean; motoboys: Motoboy[]; onClose: () => void
   onConfirm: (id: number) => void; isPending: boolean
@@ -355,6 +460,298 @@ function ModalMotoboy({ open, motoboys, onClose, onConfirm, isPending }: {
   )
 }
 
+// ─────────────────────────────────────────────────────────────
+// [MELHORIA 2] Modal Editar Pedido
+// ─────────────────────────────────────────────────────────────
+function ModalEditarPedido({ pedido, onClose, onSalvo }: {
+  pedido: any
+  onClose: () => void
+  onSalvo: (pedidoAtualizado: any) => void
+}) {
+  const [itens, setItens] = useState<any[]>(
+    (pedido.itens_pedido || []).map((item: any) => ({ ...item, _removido: false }))
+  )
+  const [salvando, setSalvando] = useState(false)
+  const [abaAtiva, setAbaAtiva] = useState<'pizza' | 'bebida' | 'outro'>('pizza')
+
+  const { data: pizzas = [] } = useQuery({ queryKey: ['pizzas-disponiveis'], queryFn: pizzasDb.listarDisponiveis })
+  const { data: bebidas = [] } = useQuery({ queryKey: ['bebidas-disponiveis'], queryFn: bebidasDb.listarDisponiveis })
+  const { data: bordas = [] } = useQuery({ queryKey: ['bordas'], queryFn: bordasDb.listar })
+  const { data: adicionais = [] } = useQuery({ queryKey: ['adicionais'], queryFn: ingredientesDb.listarAdicionais })
+
+  const isDelivery = pedido.tipo?.includes('delivery')
+
+  // Verifica se bebida pode ser alterada
+  // Delivery: só pode alterar bebida enquanto não estiver em "delivery"
+  // Presencial (mesa/balcao): sempre pode
+  const podeAlterarBebida = !isDelivery || pedido.status !== 'delivery'
+
+  const removerItem = (idx: number) => {
+    setItens(prev => prev.map((item, i) => i === idx ? { ...item, _removido: true } : item))
+  }
+
+  const restaurarItem = (idx: number) => {
+    setItens(prev => prev.map((item, i) => i === idx ? { ...item, _removido: false } : item))
+  }
+
+  const adicionarPizza = (pizza: any) => {
+    setItens(prev => [...prev, {
+      _novo: true,
+      tipo_item: 'pizza',
+      pizza_id: pizza.id,
+      pizza: pizza,
+      quantidade: 1,
+      meia_pizza: false,
+      valor_unitario: pizza.preco,
+      borda_id: null,
+      borda: null,
+      adicionais_item: [],
+      observacao: null,
+    }])
+  }
+
+  const adicionarBebida = (bebida: any) => {
+    if (!podeAlterarBebida) {
+      toast.error('Não é possível adicionar bebida após o pedido sair para delivery')
+      return
+    }
+    setItens(prev => [...prev, {
+      _novo: true,
+      tipo_item: 'bebida',
+      bebida_id: bebida.id,
+      bebida: bebida,
+      quantidade: 1,
+      valor_unitario: bebida.preco,
+    }])
+  }
+
+  const alterarQuantidade = (idx: number, delta: number) => {
+    setItens(prev => prev.map((item, i) => {
+      if (i !== idx) return item
+      const nova = Math.max(1, (item.quantidade || 1) + delta)
+      return { ...item, quantidade: nova }
+    }))
+  }
+
+  const trocarBorda = (idx: number, bordaId: number | null) => {
+    const borda = bordaId ? (bordas as any[]).find(b => b.id === bordaId) : null
+    setItens(prev => prev.map((item, i) => i === idx ? { ...item, borda_id: bordaId, borda } : item))
+  }
+
+  const salvar = async () => {
+    setSalvando(true)
+    try {
+      const itensRemovidos = itens.filter(it => !it._novo && it._removido)
+      const itensNovos = itens.filter(it => it._novo && !it._removido)
+      const itensAlterados = itens.filter(it => !it._novo && !it._removido)
+
+      // 1. Devolver estoque dos itens removidos
+      for (const item of itensRemovidos) {
+        if (item.tipo_item === 'bebida' && item.bebida_id) {
+          const { data: beb } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', item.bebida_id).single()
+          if (beb) await supabase.from('bebidas').update({ quantidade_estoque: beb.quantidade_estoque + item.quantidade }).eq('id', item.bebida_id)
+        }
+        if (item.tipo_item === 'outro' && item.outro_id) {
+          const { data: out } = await supabase.from('outros_produtos').select('quantidade_estoque').eq('id', item.outro_id).single()
+          if (out) await supabase.from('outros_produtos').update({ quantidade_estoque: out.quantidade_estoque + item.quantidade }).eq('id', item.outro_id)
+        }
+        // Para pizzas, devolver ingredientes
+        if (item.tipo_item === 'pizza') {
+          const { data: piz } = await supabase.from('pizzas')
+            .select('pizza_ingredientes(ingrediente_id, quantidade)').eq('id', item.pizza_id).single()
+          for (const pi of (piz as any)?.pizza_ingredientes || []) {
+            const { data: ing } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', pi.ingrediente_id).single()
+            if (ing) await supabase.from('ingredientes').update({ quantidade_estoque: Number(ing.quantidade_estoque) + pi.quantidade * item.quantidade }).eq('id', pi.ingrediente_id)
+          }
+        }
+        await supabase.from('itens_pedido').delete().eq('id', item.id)
+      }
+
+      // 2. Atualizar quantidades dos itens alterados (sem trocar tipo/produto)
+      for (const item of itensAlterados) {
+        await supabase.from('itens_pedido').update({
+          quantidade: item.quantidade,
+          borda_id: item.borda_id ?? null,
+          observacao: item.observacao ?? null,
+        }).eq('id', item.id)
+      }
+
+      // 3. Inserir itens novos e dar baixa de estoque
+      for (const item of itensNovos) {
+        const { _novo, _removido, pizza, bebida, outro, borda, adicionais_item, ...itemData } = item
+        const { data: itemSalvo } = await supabase.from('itens_pedido')
+          .insert({ ...itemData, pedido_id: pedido.id }).select().single()
+
+        // Baixa de estoque para novos itens
+        if (item.tipo_item === 'bebida' && item.bebida_id) {
+          const { data: beb } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', item.bebida_id).single()
+          if (beb) await supabase.from('bebidas').update({ quantidade_estoque: Math.max(0, beb.quantidade_estoque - item.quantidade) }).eq('id', item.bebida_id)
+        }
+        if (item.tipo_item === 'pizza') {
+          const { data: piz } = await supabase.from('pizzas')
+            .select('pizza_ingredientes(ingrediente_id, quantidade)').eq('id', item.pizza_id).single()
+          for (const pi of (piz as any)?.pizza_ingredientes || []) {
+            const { data: ing } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', pi.ingrediente_id).single()
+            if (ing) await supabase.from('ingredientes').update({ quantidade_estoque: Math.max(0, Number(ing.quantidade_estoque) - pi.quantidade * item.quantidade) }).eq('id', pi.ingrediente_id)
+          }
+        }
+      }
+
+      // 4. Recalcular valor total
+      const todosItensAtivos = [
+        ...itensAlterados,
+        ...itensNovos,
+      ]
+      const novoTotal = todosItensAtivos.reduce((acc, item) => {
+        return acc + (Number(item.valor_unitario) * item.quantidade)
+      }, 0) + Number(pedido.valor_frete || 0)
+
+      await supabase.from('pedidos').update({ valor_total: novoTotal }).eq('id', pedido.id)
+
+      // 5. Buscar pedido atualizado para passar para o kanban
+      const pedidoAtualizado = await pedidosDb.buscarAtivo(pedido.id)
+      toast.success('Pedido atualizado!')
+      onSalvo(pedidoAtualizado || { ...pedido, valor_total: novoTotal, itens_pedido: todosItensAtivos })
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao salvar')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const itensVisiveis = itens.filter(it => !it._removido)
+  const itensRemovidosCount = itens.filter(it => it._removido).length
+
+  return (
+    <Modal open onClose={onClose} title={`Editar Pedido #${pedido.id}`} size="lg">
+      <div className="flex flex-col gap-4 max-h-[75vh] overflow-y-auto pr-1">
+
+        {/* Itens atuais */}
+        <div>
+          <p className="label mb-2">Itens do pedido</p>
+          <div className="space-y-2">
+            {itens.map((item, idx) => {
+              const nome = item.meia_pizza
+                ? `½ ${item.pizza_metade_1?.nome} + ½ ${item.pizza_metade_2?.nome}`
+                : item.pizza?.nome || item.bebida?.nome || item.outro?.nome || '?'
+              const isBebida = item.tipo_item === 'bebida'
+              const bloqueado = isBebida && !podeAlterarBebida
+
+              return (
+                <div key={idx} className={clsx(
+                  'flex items-center gap-2 p-2.5 rounded-xl border text-sm transition-all',
+                  item._removido
+                    ? 'border-red-900/30 bg-red-950/20 opacity-50 line-through text-gray-500'
+                    : 'border-gray-700 bg-gray-800/50'
+                )}>
+                  <div className="flex-1">
+                    <span className="text-gray-200 font-medium">{nome}</span>
+                    {item.borda && <span className="text-pizza-400 text-xs ml-1">+{item.borda.nome}</span>}
+                    {item.tipo_item === 'pizza' && !item._removido && (
+                      <select
+                        value={item.borda_id ?? ''}
+                        onChange={e => trocarBorda(idx, e.target.value ? Number(e.target.value) : null)}
+                        className="input text-xs py-0.5 mt-1 w-full"
+                      >
+                        <option value="">Sem borda</option>
+                        {(bordas as any[]).map((b: any) => (
+                          <option key={b.id} value={b.id}>{b.nome} (+R${Number(b.preco).toFixed(2)})</option>
+                        ))}
+                      </select>
+                    )}
+                    {bloqueado && <span className="text-xs text-orange-400 block mt-0.5">⚠ Pedido em delivery — não pode alterar bebida</span>}
+                  </div>
+                  {!item._removido && (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => alterarQuantidade(idx, -1)} disabled={item.quantidade <= 1}
+                        className="w-6 h-6 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs disabled:opacity-30">−</button>
+                      <span className="w-5 text-center text-gray-200 text-xs">{item.quantidade}</span>
+                      <button onClick={() => alterarQuantidade(idx, 1)}
+                        className="w-6 h-6 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs">+</button>
+                    </div>
+                  )}
+                  {item._removido
+                    ? <button onClick={() => restaurarItem(idx)} className="text-xs text-green-400 hover:text-green-300 px-2">↩ Restaurar</button>
+                    : <button onClick={() => removerItem(idx)} disabled={bloqueado} className="p-1 text-red-500 hover:text-red-400 disabled:opacity-30" title="Remover item">
+                        <Trash2 size={14} />
+                      </button>
+                  }
+                </div>
+              )
+            })}
+          </div>
+          {itensRemovidosCount > 0 && (
+            <p className="text-xs text-red-400 mt-1">{itensRemovidosCount} item(ns) marcado(s) para remoção</p>
+          )}
+        </div>
+
+        {/* Adicionar itens */}
+        <div className="border-t border-gray-800 pt-4">
+          <p className="label mb-2">Adicionar item</p>
+          <div className="flex gap-2 mb-3">
+            {(['pizza', 'bebida'] as const).map(aba => (
+              <button key={aba} onClick={() => setAbaAtiva(aba)}
+                className={clsx('text-xs px-3 py-1.5 rounded-lg border transition-all',
+                  abaAtiva === aba ? 'border-pizza-500 bg-pizza-500/10 text-pizza-400' : 'border-gray-700 text-gray-500 hover:border-gray-600')}>
+                {aba === 'pizza' ? '🍕 Pizza' : '🥤 Bebida'}
+              </button>
+            ))}
+          </div>
+
+          {abaAtiva === 'pizza' && (
+            <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
+              {(pizzas as any[]).map((p: any) => (
+                <button key={p.id} onClick={() => adicionarPizza(p)}
+                  className="text-left text-xs p-2 rounded-lg border border-gray-700 hover:border-pizza-500/50 hover:bg-pizza-500/5 transition-all">
+                  <span className="text-gray-300 block truncate">{p.nome}</span>
+                  <span className="text-pizza-400">R$ {Number(p.preco).toFixed(2)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {abaAtiva === 'bebida' && (
+            <div className={clsx('grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto', !podeAlterarBebida && 'opacity-50 pointer-events-none')}>
+              {!podeAlterarBebida && (
+                <p className="col-span-2 text-xs text-orange-400 mb-1">⚠ Pedido em delivery — bebidas não podem ser alteradas</p>
+              )}
+              {(bebidas as any[]).map((b: any) => (
+                <button key={b.id} onClick={() => adicionarBebida(b)}
+                  className="text-left text-xs p-2 rounded-lg border border-gray-700 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all">
+                  <span className="text-gray-300 block truncate">{b.nome}</span>
+                  <span className="text-blue-400">R$ {Number(b.preco).toFixed(2)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Rodapé */}
+        <div className="border-t border-gray-800 pt-3 flex items-center justify-between">
+          <div className="text-sm">
+            <span className="text-gray-500">Novo total estimado: </span>
+            <span className="text-gray-100 font-bold">
+              R$ {(
+                itens.filter(it => !it._removido).reduce((acc, it) => acc + Number(it.valor_unitario) * it.quantidade, 0)
+                + Number(pedido.valor_frete || 0)
+              ).toFixed(2)}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="btn-secondary">Cancelar</button>
+            <button onClick={salvar} disabled={salvando} className="btn-primary flex items-center gap-2">
+              {salvando ? <Spinner size="sm" /> : '✓ Salvar alterações'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Geração de HTML para impressão
+// ─────────────────────────────────────────────────────────────
 function gerarHTMLProducao(pedido: any): string {
   const itens = (pedido.itens_pedido || []).map((item: any) => {
     let desc = item.meia_pizza
@@ -365,10 +762,28 @@ function gerarHTMLProducao(pedido: any): string {
     if (item.observacao) desc += ` | Obs: ${item.observacao}`
     return `<div class="item"><span>${item.quantidade}x ${desc}</span></div>`
   }).join('')
+
+  // [MELHORIA 1] Endereço: preferir endereço temporário se existir
+  let enderecoHtml = ''
+  if (pedido.tipo === 'delivery' || pedido.tipo?.includes('delivery')) {
+    if (pedido.endereco_temp_condominio_id) {
+      const condNome = pedido.endereco_temp_condominio_nome || 'Endereço temporário'
+      const q = pedido.endereco_temp_quadra ? `Q${pedido.endereco_temp_quadra}` : ''
+      const l = pedido.endereco_temp_lote ? `L${pedido.endereco_temp_lote}` : ''
+      const r = pedido.endereco_temp_rua || ''
+      enderecoHtml = `<div><strong>📍 ENDEREÇO TEMP:</strong> ${condNome} · ${q} ${l} ${r}</div>`
+    } else {
+      const condNome = pedido.condominio?.nome || pedido.cliente?.condominio?.nome || ''
+      const q = pedido.cliente?.quadra ? `Q${pedido.cliente.quadra}` : ''
+      const l = pedido.cliente?.lote ? `L${pedido.cliente.lote}` : ''
+      enderecoHtml = `<div>${condNome} · ${q} ${l}</div>`
+    }
+  }
+
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Courier New',monospace;font-size:12px;width:80mm;margin:0 auto;padding:8px}h1{font-size:15px;text-align:center;margin:0 0 4px}.divider{border-top:1px dashed #000;margin:6px 0}.item{margin:3px 0}.label{font-size:10px;text-transform:uppercase;color:#555}</style></head><body>
     <h1>🍕 PRODUÇÃO</h1><div class="label">Pedido</div><div><strong>#${pedido.id}</strong> · ${new Date(pedido.data_criacao).toLocaleString('pt-BR')}</div>
     <div class="divider"></div><div class="label">Cliente</div><div>${pedido.cliente?.nome || 'Balcão'}</div>
-    ${pedido.tipo === 'delivery' ? `<div>${pedido.cliente?.condominio?.nome || ''} · Q${pedido.cliente?.quadra} L${pedido.cliente?.lote}</div>` : ''}
+    ${enderecoHtml}
     <div class="divider"></div><div class="label">Itens</div>${itens}
     ${pedido.observacao ? `<div class="divider"></div><div><strong>Obs:</strong> ${pedido.observacao}</div>` : ''}
     <div class="divider"></div><div style="text-align:center;font-size:10px">--- SEM VALOR ---</div></body></html>`
@@ -382,11 +797,28 @@ function gerarHTMLEntrega(pedido: any): string {
     if (item.borda) desc += ` | Borda: ${item.borda.nome}`
     return `<div class="item"><span>${item.quantidade}x ${desc}</span><span>R$ ${(Number(item.valor_unitario)*item.quantidade).toFixed(2)}</span></div>`
   }).join('')
+
+  // [MELHORIA 1] Endereço na nota de entrega — preferir endereço temporário
+  let enderecoHtml = ''
+  if (pedido.endereco_temp_condominio_id) {
+    const condNome = pedido.endereco_temp_condominio_nome || 'Endereço temporário'
+    const q = pedido.endereco_temp_quadra ? `Q${pedido.endereco_temp_quadra}` : ''
+    const l = pedido.endereco_temp_lote ? `L${pedido.endereco_temp_lote}` : ''
+    const r = pedido.endereco_temp_rua || ''
+    enderecoHtml = `<div><strong>⚠ ENDEREÇO TEMP:</strong> ${condNome}</div><div>${q} ${l} ${r}</div>`
+  } else {
+    const condNome = pedido.condominio?.nome || pedido.cliente?.condominio?.nome || ''
+    const q = pedido.cliente?.quadra ? `Q${pedido.cliente.quadra}` : ''
+    const l = pedido.cliente?.lote ? `L${pedido.cliente.lote}` : ''
+    const r = pedido.cliente?.rua || ''
+    enderecoHtml = `<div>${condNome} · ${q} ${l} · ${r}</div>`
+  }
+
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Courier New',monospace;font-size:12px;width:80mm;margin:0 auto;padding:8px}h1{font-size:15px;text-align:center;margin:0 0 4px}.divider{border-top:1px dashed #000;margin:6px 0}.item{display:flex;justify-content:space-between;margin:3px 0}.label{font-size:10px;text-transform:uppercase;color:#555}.total{font-weight:bold;font-size:13px}</style></head><body>
     <h1>🍕 NOTA DE ENTREGA</h1><div class="label">Pedido</div><div><strong>#${pedido.id}</strong> · ${new Date(pedido.data_criacao).toLocaleString('pt-BR')}</div>
     <div class="divider"></div><div class="label">Cliente</div><div>${pedido.cliente?.nome || '—'}</div>
-    <div>${pedido.cliente?.condominio?.nome || ''} · Q${pedido.cliente?.quadra} L${pedido.cliente?.lote} · ${pedido.cliente?.rua || ''}</div>
-    <div>Tel: ${pedido.cliente?.telefone || ''}</div>
+    ${enderecoHtml}
+    <div>Tel: ${pedido.cliente?.telefone || pedido.cliente_telefone || ''}</div>
     <div class="divider"></div><div class="label">Motoboy</div><div>${pedido.motoboy?.nome || '—'}</div>
     <div class="divider"></div><div class="label">Itens</div>${itens}
     <div class="divider"></div>

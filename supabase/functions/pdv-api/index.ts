@@ -263,17 +263,112 @@ Deno.serve(async (req: Request) => {
     }
 
     // ═══════════════════════════════════════════════
+    // PUT /pedido/:id/itens — editar itens do pedido (status "solicitado")
+    // Body: {
+    //   itens_remover: number[]         — ids de itens_pedido a remover
+    //   itens_adicionar: ItemInput[]    — novos itens (mesmo formato do POST /pedido)
+    //   itens_alterar: { id, quantidade, borda_id? }[]  — alterar qtd/borda de itens existentes
+    // }
+    // ═══════════════════════════════════════════════
+    if (req.method === 'PUT' && parts[0] === 'pedido' && parts[1] && parts[2] === 'itens') {
+      const pedidoId = Number(parts[1])
+      const body = await json(req)
+      const { itens_remover = [], itens_adicionar = [], itens_alterar = [] } = body
+
+      // Verificar se pedido existe e está em status editável
+      const { data: pedido } = await supabase.from('pedidos').select('status, tipo, valor_frete').eq('id', pedidoId).single()
+      if (!pedido) return err('Pedido não encontrado', 404)
+      if ((pedido as any).status !== 'solicitado') return err('Só é possível editar pedidos com status "solicitado"')
+
+      const isDelivery = (pedido as any).tipo?.includes('delivery')
+
+      // 1. Remover itens e devolver estoque
+      for (const itemId of itens_remover) {
+        const { data: item } = await supabase.from('itens_pedido')
+          .select('*, pizza:pizzas!itens_pedido_pizza_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(pizza_ingredientes(ingrediente_id, quantidade))')
+          .eq('id', itemId).single()
+        if (!item) continue
+        const qtd = (item as any).quantidade || 1
+
+        if ((item as any).tipo_item === 'bebida' && (item as any).bebida_id) {
+          const { data: beb } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', (item as any).bebida_id).single()
+          if (beb) await supabase.from('bebidas').update({ quantidade_estoque: Number((beb as any).quantidade_estoque) + qtd }).eq('id', (item as any).bebida_id)
+        }
+        if ((item as any).tipo_item === 'outro' && (item as any).outro_id) {
+          const { data: out } = await supabase.from('outros_produtos').select('quantidade_estoque').eq('id', (item as any).outro_id).single()
+          if (out) await supabase.from('outros_produtos').update({ quantidade_estoque: Number((out as any).quantidade_estoque) + qtd }).eq('id', (item as any).outro_id)
+        }
+        if ((item as any).tipo_item === 'pizza') {
+          const ingredientes = [
+            ...((item as any).pizza?.pizza_ingredientes || []),
+            ...((item as any).pizza_metade_1?.pizza_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
+            ...((item as any).pizza_metade_2?.pizza_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
+          ]
+          const mapa: Record<number, number> = {}
+          ingredientes.forEach((pi: any) => { mapa[pi.ingrediente_id] = (mapa[pi.ingrediente_id] || 0) + pi.quantidade * qtd })
+          for (const [ingId, qtdDev] of Object.entries(mapa)) {
+            const { data: ing } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', ingId).single()
+            if (ing) await supabase.from('ingredientes').update({ quantidade_estoque: Number((ing as any).quantidade_estoque) + qtdDev }).eq('id', ingId)
+          }
+        }
+        await supabase.from('itens_pedido').delete().eq('id', itemId)
+      }
+
+      // 2. Alterar quantidade/borda de itens existentes
+      for (const alt of itens_alterar) {
+        if (!alt.id) continue
+        await supabase.from('itens_pedido').update({
+          quantidade: alt.quantidade,
+          borda_id: alt.borda_id ?? null,
+        }).eq('id', alt.id)
+      }
+
+      // 3. Adicionar novos itens e dar baixa de estoque
+      for (const item of itens_adicionar) {
+        // Bebida em delivery: só pode adicionar se não estiver em delivery (aqui status é sempre "solicitado", então ok)
+        const { pizza_ingredientes, pizza_metade_1_ingredientes, pizza_metade_2_ingredientes, adicionais, ...itemData } = item
+        const { data: itemSalvo, error: errItem } = await supabase.from('itens_pedido')
+          .insert({ ...itemData, pedido_id: pedidoId }).select().single()
+        if (errItem) return err(errItem.message)
+
+        if (adicionais?.length) {
+          await supabase.from('adicionais_item').insert(
+            adicionais.map((a: any) => ({ ...a, item_pedido_id: (itemSalvo as any).id }))
+          )
+        }
+        await darBaixaEstoque([item])
+      }
+
+      // 4. Recalcular total
+      const { data: todosItens } = await supabase.from('itens_pedido')
+        .select('valor_unitario, quantidade').eq('pedido_id', pedidoId)
+      const novoTotal = (todosItens || []).reduce((acc: number, it: any) => acc + Number(it.valor_unitario) * it.quantidade, 0)
+        + Number((pedido as any).valor_frete || 0)
+      await supabase.from('pedidos').update({ valor_total: novoTotal }).eq('id', pedidoId)
+
+      return ok({ editado: true, pedido_id: pedidoId, novo_total: novoTotal })
+    }
+
+    // ═══════════════════════════════════════════════
     // DELETE /pedido/:id — cancelar pedido e devolver estoque
+    // Body opcional: { motivo: string }
     // ═══════════════════════════════════════════════
     if (req.method === 'DELETE' && parts[0] === 'pedido' && parts[1]) {
       const { data: pedido } = await supabase.from('pedidos').select('status').eq('id', parts[1]).single()
       if (!pedido) return err('Pedido não encontrado', 404)
       if (!['solicitado'].includes((pedido as any).status)) return err('Só é possível cancelar pedidos ainda em "solicitado"')
 
-      await devolverEstoque(Number(parts[1]))
-      await supabase.from('pedidos').update({ status: 'devolvido' }).eq('id', parts[1])
+      // Aceitar motivo no body (DELETE com body)
+      let motivo: string | null = null
+      try { const body = await req.json(); motivo = body?.motivo || null } catch {}
 
-      return ok({ cancelado: true, pedido_id: parts[1] })
+      await devolverEstoque(Number(parts[1]))
+      await supabase.from('pedidos').update({
+        status: 'devolvido',
+        motivo_cancelamento: motivo,
+      }).eq('id', parts[1])
+
+      return ok({ cancelado: true, pedido_id: parts[1], motivo })
     }
 
     // ═══════════════════════════════════════════════

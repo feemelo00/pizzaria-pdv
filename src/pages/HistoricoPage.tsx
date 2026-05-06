@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { pedidosDb } from '../lib/db'
 import { StatusBadge, LoadingPage, Empty } from '../components/ui'
-import { Search } from 'lucide-react'
+import { Search, AlertOctagon } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import clsx from 'clsx'
@@ -26,13 +26,15 @@ export function HistoricoPage() {
     clienteTelefone: '',
     busca: '',
   })
+  // [MELHORIA 3] Modo cancelamentos
+  const [modoCancelamentos, setModoCancelamentos] = useState(false)
   const [pedidoAberto, setPedidoAberto] = useState<any | null>(null)
 
   const { data: pedidos = [], isLoading } = useQuery({
-    queryKey: ['historico', filtros],
+    queryKey: ['historico', filtros, modoCancelamentos],
     queryFn: () => pedidosDb.listar({
       data: filtros.dataInicio === filtros.dataFim ? filtros.dataInicio : undefined,
-      status: filtros.status || undefined,
+      status: modoCancelamentos ? 'devolvido' : (filtros.status || undefined),
       clienteTelefone: filtros.clienteTelefone || undefined,
     })
   })
@@ -59,8 +61,28 @@ export function HistoricoPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-5 h-12 border-b border-gray-800 bg-gray-900 flex-shrink-0">
-        <h1 className="font-semibold text-gray-100 text-sm">Histórico de Pedidos</h1>
-        <span className="text-xs text-gray-500">{pedidosFiltrados.length} pedidos</span>
+        <h1 className="font-semibold text-gray-100 text-sm">
+          {modoCancelamentos ? '❌ Cancelamentos' : 'Histórico de Pedidos'}
+        </h1>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500">{pedidosFiltrados.length} pedidos</span>
+          {/* [MELHORIA 3] Botão toggle para ver cancelamentos */}
+          <button
+            onClick={() => {
+              setModoCancelamentos(v => !v)
+              if (!modoCancelamentos) setFiltros(x => ({ ...x, status: '' }))
+            }}
+            className={clsx(
+              'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all',
+              modoCancelamentos
+                ? 'border-red-600 bg-red-900/30 text-red-400'
+                : 'border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-300'
+            )}
+          >
+            <AlertOctagon size={13} />
+            {modoCancelamentos ? 'Ver todos os pedidos' : 'Ver cancelamentos'}
+          </button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -75,16 +97,18 @@ export function HistoricoPage() {
           <input type="date" value={filtros.dataFim} onChange={e => f('dataFim', e.target.value)}
             className="input text-xs py-1.5 w-36" />
         </div>
-        <div>
-          <label className="label">Status</label>
-          <select value={filtros.status} onChange={e => f('status', e.target.value)} className="input text-xs py-1.5 w-36">
-            <option value="">Todos</option>
-            <option value="finalizado">Finalizado</option>
-            <option value="devolvido">Devolvido</option>
-            <option value="solicitado">Solicitado</option>
-            <option value="fazendo">Fazendo</option>
-          </select>
-        </div>
+        {!modoCancelamentos && (
+          <div>
+            <label className="label">Status</label>
+            <select value={filtros.status} onChange={e => f('status', e.target.value)} className="input text-xs py-1.5 w-36">
+              <option value="">Todos</option>
+              <option value="finalizado">Finalizado</option>
+              <option value="devolvido">Devolvido</option>
+              <option value="solicitado">Solicitado</option>
+              <option value="fazendo">Fazendo</option>
+            </select>
+          </div>
+        )}
         <div className="flex-1 min-w-40">
           <label className="label">Buscar</label>
           <div className="relative">
@@ -96,17 +120,29 @@ export function HistoricoPage() {
         </div>
       </div>
 
+      {/* Banner modo cancelamentos */}
+      {modoCancelamentos && (
+        <div className="bg-red-950/30 border-b border-red-900/40 px-5 py-2 flex items-center gap-2">
+          <AlertOctagon size={14} className="text-red-400" />
+          <span className="text-xs text-red-400">Exibindo apenas pedidos cancelados/devolvidos. O motivo do cancelamento é mostrado na coluna e no detalhe.</span>
+        </div>
+      )}
+
       {/* Tabela */}
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? <LoadingPage /> : !pedidosFiltrados.length ? (
-          <Empty icon="📋" title="Nenhum pedido encontrado" desc="Ajuste os filtros para buscar" />
+          <Empty
+            icon={modoCancelamentos ? '✅' : '📋'}
+            title={modoCancelamentos ? 'Nenhum cancelamento encontrado' : 'Nenhum pedido encontrado'}
+            desc="Ajuste os filtros para buscar"
+          />
         ) : (
           <div className="overflow-x-auto rounded-xl border border-gray-800">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800">
-                  {['#','Data','Cliente','Tipo','Status','Total',''].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                  {['#','Data','Cliente','Tipo','Status','Total', modoCancelamentos ? 'Motivo cancelamento' : '', ''].map((h, i) => (
+                    h !== '' && <th key={i} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -125,6 +161,13 @@ export function HistoricoPage() {
                     )}>
                       R$ {Number(p.valor_total).toFixed(2)}
                     </td>
+                    {modoCancelamentos && (
+                      <td className="px-4 py-3 text-xs text-gray-500 max-w-xs">
+                        {p.motivo_cancelamento
+                          ? <span className="text-red-300/80 italic">"{p.motivo_cancelamento}"</span>
+                          : <span className="text-gray-700">—</span>}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-xs text-pizza-400">Ver detalhes →</td>
                   </tr>
                 ))}
@@ -172,6 +215,20 @@ export function HistoricoPage() {
               {pedidoAberto.observacao && (
                 <div className="bg-yellow-900/20 border border-yellow-800/30 rounded-lg p-2 text-xs text-yellow-400">
                   💬 {pedidoAberto.observacao}
+                </div>
+              )}
+              {/* [MELHORIA 3] Exibir motivo do cancelamento no detalhe */}
+              {pedidoAberto.status === 'devolvido' && (
+                <div className={clsx(
+                  'rounded-lg p-3 text-xs border',
+                  pedidoAberto.motivo_cancelamento
+                    ? 'bg-red-950/30 border-red-900/40 text-red-300'
+                    : 'bg-gray-800/50 border-gray-700 text-gray-500'
+                )}>
+                  <span className="font-medium uppercase tracking-wide text-red-400 block mb-1">❌ Cancelamento</span>
+                  {pedidoAberto.motivo_cancelamento
+                    ? <span>"{pedidoAberto.motivo_cancelamento}"</span>
+                    : <span className="italic">Sem motivo informado</span>}
                 </div>
               )}
             </div>
