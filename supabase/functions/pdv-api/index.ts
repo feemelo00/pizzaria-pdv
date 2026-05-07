@@ -238,11 +238,44 @@ Deno.serve(async (req: Request) => {
     }
 
     // ═══════════════════════════════════════════════
-    // GET /pedido/:id — status do pedido
+    // GET /pedido/cliente/:telefone — pedido ativo mais recente do cliente
+    // Segurança: só retorna pedido do próprio telefone
     // ═══════════════════════════════════════════════
-    if (req.method === 'GET' && parts[0] === 'pedido' && parts[1]) {
+    if (req.method === 'GET' && parts[0] === 'pedido' && parts[1] === 'cliente' && parts[2]) {
+      const telefone = parts[2].replace(/\D/g, '')
+
       const { data } = await supabase.from('pedidos')
-        .select('id, status, valor_total, forma_pagamento, data_criacao, motoboy:motoboys(nome), itens_pedido(quantidade, tipo_item, pizza:pizzas!itens_pedido_pizza_id_fkey(nome), bebida:bebidas(nome), outro:outros_produtos(nome))')
+        .select('id, status, valor_total, forma_pagamento, data_criacao, cliente_telefone, motoboy:motoboys(nome), itens_pedido(id, quantidade, tipo_item, valor_unitario, pizza:pizzas!itens_pedido_pizza_id_fkey(nome), pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(nome), pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(nome), bebida:bebidas(nome), outro:outros_produtos(nome))')
+        .eq('cliente_telefone', telefone)
+        .not('status', 'in', '("finalizado","devolvido")')
+        .order('data_criacao', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!data) return err('Nenhum pedido ativo encontrado para este cliente', 404)
+
+      const statusMensagem: Record<string, string> = {
+        solicitado: '🕐 Seu pedido foi recebido e está na fila!',
+        fazendo: '👨‍🍳 Seu pedido está sendo preparado!',
+        pronto: '✅ Seu pedido está pronto!',
+        delivery: `🛵 Seu pedido saiu para entrega${(data as any).motoboy ? ` com ${(data as any).motoboy.nome}` : ''}!`,
+        balcao: '🏪 Seu pedido está no balcão para retirada!',
+      }
+
+      return ok({
+        ...(data as any),
+        status_mensagem: statusMensagem[(data as any).status] || (data as any).status,
+        pode_cancelar: (data as any).status === 'solicitado',
+        pode_editar: (data as any).status === 'solicitado',
+      })
+    }
+
+    // ═══════════════════════════════════════════════
+    // GET /pedido/:id — status do pedido por ID
+    // ═══════════════════════════════════════════════
+    if (req.method === 'GET' && parts[0] === 'pedido' && parts[1] && parts[1] !== 'cliente') {
+      const { data } = await supabase.from('pedidos')
+        .select('id, status, valor_total, forma_pagamento, data_criacao, cliente_telefone, motoboy:motoboys(nome), itens_pedido(id, quantidade, tipo_item, valor_unitario, pizza:pizzas!itens_pedido_pizza_id_fkey(nome), bebida:bebidas(nome), outro:outros_produtos(nome))')
         .eq('id', parts[1]).single()
       if (!data) return err('Pedido não encontrado', 404)
 
@@ -258,7 +291,9 @@ Deno.serve(async (req: Request) => {
 
       return ok({
         ...(data as any),
-        status_mensagem: statusMensagem[(data as any).status] || (data as any).status
+        status_mensagem: statusMensagem[(data as any).status] || (data as any).status,
+        pode_cancelar: (data as any).status === 'solicitado',
+        pode_editar: (data as any).status === 'solicitado',
       })
     }
 
