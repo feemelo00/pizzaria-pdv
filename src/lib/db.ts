@@ -347,9 +347,6 @@ export const pedidosDb = {
       }
     }
 
-    // Baixa de estoque
-    await pedidosDb.darBaixaEstoque(pedido.id, itens)
-
     // Cria entrega se delivery
     if (pedidoData.tipo?.includes('delivery')) {
       await supabase.from('entregas').insert({ pedido_id: pedido.id, status: 'aguardando' })
@@ -357,6 +354,97 @@ export const pedidosDb = {
 
     return pedido
   },
+  // Dar baixa de estoque por pedido — busca tudo do banco, correto para 1/2/3 sabores
+  darBaixaEstoquePorPedido: async (pedidoId: number) => {
+    const { data: itens } = await supabase.from('itens_pedido')
+      .select(`
+        id, tipo_item, quantidade, meia_pizza, tres_sabores,
+        pizza_id, bebida_id, outro_id,
+        pizza:pizzas!itens_pedido_pizza_id_fkey(
+          pizza_ingredientes(ingrediente_id, quantidade)
+        ),
+        pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(
+          pizza_ingredientes(ingrediente_id, quantidade)
+        ),
+        pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(
+          pizza_ingredientes(ingrediente_id, quantidade)
+        ),
+        pizza_metade_3:pizzas!itens_pedido_pizza_metade_3_id_fkey(
+          pizza_ingredientes(ingrediente_id, quantidade)
+        ),
+        adicionais_item(ingrediente_id, quantidade, aplicado_em)
+      `)
+      .eq('pedido_id', pedidoId)
+
+    const mapaIngredientes: Record<number, number> = {}
+
+    for (const item of (itens || [])) {
+      const qtd = item.quantidade || 1
+
+      if (item.tipo_item === 'pizza') {
+        if (!item.meia_pizza) {
+          // Pizza inteira — 100% dos ingredientes
+          for (const pi of (item.pizza as any)?.pizza_ingredientes || []) {
+            mapaIngredientes[pi.ingrediente_id] = (mapaIngredientes[pi.ingrediente_id] || 0) + pi.quantidade * qtd
+          }
+        } else if (item.tres_sabores) {
+          // 3 sabores — cada metade usa 1/3 dos ingredientes
+          for (const pi of (item.pizza_metade_1 as any)?.pizza_ingredientes || []) {
+            mapaIngredientes[pi.ingrediente_id] = (mapaIngredientes[pi.ingrediente_id] || 0) + (pi.quantidade / 3) * qtd
+          }
+          for (const pi of (item.pizza_metade_2 as any)?.pizza_ingredientes || []) {
+            mapaIngredientes[pi.ingrediente_id] = (mapaIngredientes[pi.ingrediente_id] || 0) + (pi.quantidade / 3) * qtd
+          }
+          for (const pi of (item.pizza_metade_3 as any)?.pizza_ingredientes || []) {
+            mapaIngredientes[pi.ingrediente_id] = (mapaIngredientes[pi.ingrediente_id] || 0) + (pi.quantidade / 3) * qtd
+          }
+        } else {
+          // 2 sabores — cada metade usa 1/2 dos ingredientes
+          for (const pi of (item.pizza_metade_1 as any)?.pizza_ingredientes || []) {
+            mapaIngredientes[pi.ingrediente_id] = (mapaIngredientes[pi.ingrediente_id] || 0) + (pi.quantidade / 2) * qtd
+          }
+          for (const pi of (item.pizza_metade_2 as any)?.pizza_ingredientes || []) {
+            mapaIngredientes[pi.ingrediente_id] = (mapaIngredientes[pi.ingrediente_id] || 0) + (pi.quantidade / 2) * qtd
+          }
+        }
+
+        // Adicionais da pizza
+        for (const ad of (item.adicionais_item || [])) {
+          const qAd = ad.aplicado_em !== 'inteira' ? ad.quantidade / 2 : ad.quantidade
+          mapaIngredientes[ad.ingrediente_id] = (mapaIngredientes[ad.ingrediente_id] || 0) + qAd * qtd
+        }
+      }
+
+      // Bebida
+      if (item.tipo_item === 'bebida' && item.bebida_id) {
+        const { data: beb } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', item.bebida_id).single()
+        if (beb) await supabase.from('bebidas').update({
+          quantidade_estoque: Math.max(0, Number(beb.quantidade_estoque) - qtd)
+        }).eq('id', item.bebida_id)
+      }
+
+      // Outro produto
+      if (item.tipo_item === 'outro' && item.outro_id) {
+        const { data: out } = await supabase.from('outros_produtos').select('quantidade_estoque').eq('id', item.outro_id).single()
+        if (out) await supabase.from('outros_produtos').update({
+          quantidade_estoque: Math.max(0, Number(out.quantidade_estoque) - qtd)
+        }).eq('id', item.outro_id)
+      }
+    }
+
+    // Aplicar baixa de ingredientes em batch
+    for (const [ingId, qtdBaixa] of Object.entries(mapaIngredientes)) {
+      const { data: ing } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', ingId).single()
+      if (!ing) continue
+      const novoEstoque = Math.max(0, Number(ing.quantidade_estoque) - qtdBaixa)
+      await supabase.from('ingredientes').update({ quantidade_estoque: novoEstoque }).eq('id', ingId)
+      await supabase.from('movimentacoes_estoque').insert({
+        ingrediente_id: Number(ingId), tipo: 'saida_pedido',
+        quantidade: qtdBaixa, motivo: `Pedido #${pedidoId} — fazendo`, pedido_id: pedidoId
+      })
+    }
+  },
+
   darBaixaEstoque: async (pedidoId: number, itens: any[]) => {
     const mapaEstoque: Record<number, number> = {}
 
@@ -410,45 +498,20 @@ export const pedidosDb = {
     if (status === 'finalizado') update.data_finalizacao = new Date().toISOString()
     const { error } = await supabase.from('pedidos').update(update).eq('id', id)
     if (error) throw new Error(error.message)
+
+    // Dar baixa de estoque quando começa a fazer
+    if (status === 'fazendo') {
+      await pedidosDb.darBaixaEstoquePorPedido(id)
+    }
   },
   atualizar: async (id: number, dados: any) => {
     const { error } = await supabase.from('pedidos').update(dados).eq('id', id)
     if (error) throw new Error(error.message)
   },
 
-  // [MELHORIA 3] Cancelar pedido com motivo opcional — devolve estoque
+  // Cancelar pedido com motivo — sem devolução de estoque
+  // (estoque só é baixado em "fazendo", cancelar ocorre antes disso)
   cancelar: async (id: number, motivo?: string) => {
-    const { data: itens } = await supabase.from('itens_pedido')
-      .select('*, pizza:pizzas!itens_pedido_pizza_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(pizza_ingredientes(ingrediente_id, quantidade))')
-      .eq('pedido_id', id)
-
-    for (const item of (itens || [])) {
-      const qtd = item.quantidade || 1
-      if (item.tipo_item === 'bebida' && item.bebida_id) {
-        const { data } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', item.bebida_id).single()
-        if (data) await supabase.from('bebidas').update({ quantidade_estoque: Number(data.quantidade_estoque) + qtd }).eq('id', item.bebida_id)
-      }
-      if (item.tipo_item === 'outro' && item.outro_id) {
-        const { data } = await supabase.from('outros_produtos').select('quantidade_estoque').eq('id', item.outro_id).single()
-        if (data) await supabase.from('outros_produtos').update({ quantidade_estoque: Number(data.quantidade_estoque) + qtd }).eq('id', item.outro_id)
-      }
-      if (item.tipo_item === 'pizza') {
-        const ingredientes = [
-          ...((item.pizza as any)?.pizza_ingredientes || []),
-          ...((item.pizza_metade_1 as any)?.pizza_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
-          ...((item.pizza_metade_2 as any)?.pizza_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
-        ]
-        const mapa: Record<number, number> = {}
-        ingredientes.forEach((pi: any) => {
-          mapa[pi.ingrediente_id] = (mapa[pi.ingrediente_id] || 0) + pi.quantidade * qtd
-        })
-        for (const [ingId, qtdDevolver] of Object.entries(mapa)) {
-          const { data } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', ingId).single()
-          if (data) await supabase.from('ingredientes').update({ quantidade_estoque: Number(data.quantidade_estoque) + qtdDevolver }).eq('id', ingId)
-        }
-      }
-    }
-
     const { error } = await supabase.from('pedidos').update({
       status: 'devolvido',
       motivo_cancelamento: motivo || null,

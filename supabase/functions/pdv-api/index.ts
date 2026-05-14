@@ -22,63 +22,7 @@ async function json(req: Request) {
   try { return await req.json() } catch { return {} }
 }
 
-// ── Estoque: dar baixa ────────────────────────────────────────
-async function darBaixaEstoque(itens: any[]) {
-  for (const item of itens) {
-    const qtd = item.quantidade || 1
-
-    if (item.tipo_item === 'pizza') {
-      const ingredientes = [
-        ...(item.pizza_ingredientes || []),
-        ...(item.pizza_metade_1_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
-        ...(item.pizza_metade_2_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
-        ...(item.pizza_metade_3_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 3 })),
-      ]
-      const mapa: Record<number, number> = {}
-      ingredientes.forEach((pi: any) => {
-        mapa[pi.ingrediente_id] = (mapa[pi.ingrediente_id] || 0) + pi.quantidade * qtd
-      })
-      for (const [ingId, qtdBaixa] of Object.entries(mapa)) {
-        const { data } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', ingId).single()
-        if (data) await supabase.from('ingredientes').update({ quantidade_estoque: Math.max(0, Number(data.quantidade_estoque) - qtdBaixa) }).eq('id', ingId)
-      }
-    }
-
-    if (item.tipo_item === 'bebida' && item.bebida_id) {
-      const { data } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', item.bebida_id).single()
-      if (data) await supabase.from('bebidas').update({ quantidade_estoque: Math.max(0, Number(data.quantidade_estoque) - qtd) }).eq('id', item.bebida_id)
-    }
-
-    if (item.tipo_item === 'outro' && item.outro_id) {
-      const { data } = await supabase.from('outros_produtos').select('quantidade_estoque').eq('id', item.outro_id).single()
-      if (data) await supabase.from('outros_produtos').update({ quantidade_estoque: Math.max(0, Number(data.quantidade_estoque) - qtd) }).eq('id', item.outro_id)
-    }
-
-    // Adicionais
-    for (const adicional of (item.adicionais || [])) {
-      const { data } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', adicional.ingrediente_id).single()
-      if (data) await supabase.from('ingredientes').update({ quantidade_estoque: Math.max(0, Number(data.quantidade_estoque) - adicional.quantidade * qtd) }).eq('id', adicional.ingrediente_id)
-    }
-  }
-}
-
-async function devolverEstoque(pedidoId: number) {
-  const { data: itens } = await supabase.from('itens_pedido')
-    .select('*, pizza:pizzas!itens_pedido_pizza_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(pizza_ingredientes(ingrediente_id, quantidade))')
-    .eq('pedido_id', pedidoId)
-
-  for (const item of (itens || [])) {
-    const qtd = item.quantidade || 1
-    if (item.tipo_item === 'bebida' && item.bebida_id) {
-      const { data } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', item.bebida_id).single()
-      if (data) await supabase.from('bebidas').update({ quantidade_estoque: Number(data.quantidade_estoque) + qtd }).eq('id', item.bebida_id)
-    }
-    if (item.tipo_item === 'outro' && item.outro_id) {
-      const { data } = await supabase.from('outros_produtos').select('quantidade_estoque').eq('id', item.outro_id).single()
-      if (data) await supabase.from('outros_produtos').update({ quantidade_estoque: Number(data.quantidade_estoque) + qtd }).eq('id', item.outro_id)
-    }
-  }
-}
+// devolverEstoque removida — estoque só baixa em "fazendo", cancelamento não afeta estoque
 
 // ── Router ────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
@@ -221,8 +165,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Baixa de estoque
-      await darBaixaEstoque(itens)
+      // Estoque NÃO é baixado aqui — só quando status muda para 'fazendo' no Kanban
 
       // Registrar entrega
       await supabase.from('entregas').insert({ pedido_id: pedido.id, status: 'aguardando' })
@@ -245,7 +188,19 @@ Deno.serve(async (req: Request) => {
       const telefone = parts[2].replace(/\D/g, '')
 
       const { data } = await supabase.from('pedidos')
-        .select('id, status, valor_total, forma_pagamento, data_criacao, cliente_telefone, motoboy:motoboys(nome), itens_pedido(id, quantidade, tipo_item, valor_unitario, pizza:pizzas!itens_pedido_pizza_id_fkey(nome), pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(nome), pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(nome), bebida:bebidas(nome), outro:outros_produtos(nome))')
+        .select(`
+          id, status, valor_total, forma_pagamento, data_criacao, cliente_telefone,
+          motoboy:motoboys(nome),
+          itens_pedido(
+            id, quantidade, tipo_item, valor_unitario,
+            pizza:pizzas!itens_pedido_pizza_id_fkey(nome),
+            pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(nome),
+            pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(nome),
+            pizza_metade_3:pizzas!itens_pedido_pizza_metade_3_id_fkey(nome),
+            bebida:bebidas(nome),
+            outro:outros_produtos(nome)
+          )
+        `)
         .eq('cliente_telefone', telefone)
         .not('status', 'in', '("finalizado","devolvido")')
         .order('data_criacao', { ascending: false })
@@ -255,11 +210,11 @@ Deno.serve(async (req: Request) => {
       if (!data) return err('Nenhum pedido ativo encontrado para este cliente', 404)
 
       const statusMensagem: Record<string, string> = {
-        solicitado: '🕐 Seu pedido foi recebido e está na fila!',
-        fazendo: '👨‍🍳 Seu pedido está sendo preparado!',
-        pronto: '✅ Seu pedido está pronto!',
-        delivery: `🛵 Seu pedido saiu para entrega${(data as any).motoboy ? ` com ${(data as any).motoboy.nome}` : ''}!`,
-        balcao: '🏪 Seu pedido está no balcão para retirada!',
+        solicitado: '\u{1F550} Seu pedido foi recebido e está na fila!',
+        fazendo: '\u{1F468}\u200D\u{1F373} Seu pedido está sendo preparado!',
+        pronto: '\u2705 Seu pedido está pronto!',
+        delivery: `\u{1F6F5} Seu pedido saiu para entrega${(data as any).motoboy ? ` com ${(data as any).motoboy.nome}` : ''}!`,
+        balcao: '\u{1F3EA} Seu pedido está no balcão para retirada!',
       }
 
       return ok({
@@ -275,18 +230,27 @@ Deno.serve(async (req: Request) => {
     // ═══════════════════════════════════════════════
     if (req.method === 'GET' && parts[0] === 'pedido' && parts[1] && parts[1] !== 'cliente') {
       const { data } = await supabase.from('pedidos')
-        .select('id, status, valor_total, forma_pagamento, data_criacao, cliente_telefone, motoboy:motoboys(nome), itens_pedido(id, quantidade, tipo_item, valor_unitario, pizza:pizzas!itens_pedido_pizza_id_fkey(nome), bebida:bebidas(nome), outro:outros_produtos(nome))')
+        .select(`
+          id, status, valor_total, forma_pagamento, data_criacao, cliente_telefone,
+          motoboy:motoboys(nome),
+          itens_pedido(
+            id, quantidade, tipo_item, valor_unitario,
+            pizza:pizzas!itens_pedido_pizza_id_fkey(nome),
+            bebida:bebidas(nome),
+            outro:outros_produtos(nome)
+          )
+        `)
         .eq('id', parts[1]).single()
       if (!data) return err('Pedido não encontrado', 404)
 
       const statusMensagem: Record<string, string> = {
-        solicitado: '🕐 Seu pedido foi recebido e está na fila!',
-        fazendo: '👨‍🍳 Seu pedido está sendo preparado!',
-        pronto: '✅ Seu pedido está pronto!',
-        delivery: `🛵 Seu pedido saiu para entrega${(data as any).motoboy ? ` com ${(data as any).motoboy.nome}` : ''}!`,
-        balcao: '🏪 Seu pedido está no balcão para retirada!',
-        finalizado: '🎉 Pedido finalizado! Obrigado pela preferência!',
-        devolvido: '❌ Pedido devolvido.',
+        solicitado: '\u{1F550} Seu pedido foi recebido e está na fila!',
+        fazendo: '\u{1F468}\u200D\u{1F373} Seu pedido está sendo preparado!',
+        pronto: '\u2705 Seu pedido está pronto!',
+        delivery: `\u{1F6F5} Seu pedido saiu para entrega${(data as any).motoboy ? ` com ${(data as any).motoboy.nome}` : ''}!`,
+        balcao: '\u{1F3EA} Seu pedido está no balcão para retirada!',
+        finalizado: '\u{1F389} Pedido finalizado! Obrigado pela preferência!',
+        devolvido: '\u274C Pedido devolvido.',
       }
 
       return ok({
@@ -298,87 +262,73 @@ Deno.serve(async (req: Request) => {
     }
 
     // ═══════════════════════════════════════════════
-    // PUT /pedido/:id/itens — editar itens do pedido (status "solicitado")
-    // Body: {
-    //   itens_remover: number[]         — ids de itens_pedido a remover
-    //   itens_adicionar: ItemInput[]    — novos itens (mesmo formato do POST /pedido)
-    //   itens_alterar: { id, quantidade, borda_id? }[]  — alterar qtd/borda de itens existentes
-    // }
+    // PUT /pedido/:id/itens — editar itens (status "solicitado")
+    // Body: { itens_remover, itens_adicionar, itens_alterar, telefone_cliente }
     // ═══════════════════════════════════════════════
-    if (req.method === 'PUT' && parts[0] === 'pedido' && parts[1] && parts[2] === 'itens') {
+    if (req.method === 'PUT' && parts[0] === 'pedido' && parts[2] === 'itens') {
       const pedidoId = Number(parts[1])
       const body = await json(req)
-      const { itens_remover = [], itens_adicionar = [], itens_alterar = [] } = body
+      const { itens_remover = [], itens_adicionar = [], itens_alterar = [], telefone_cliente } = body
 
-      // Verificar se pedido existe e está em status editável
-      const { data: pedido } = await supabase.from('pedidos').select('status, tipo, valor_frete').eq('id', pedidoId).single()
+      const { data: pedido } = await supabase.from('pedidos')
+        .select('status, tipo, valor_frete, cliente_telefone').eq('id', pedidoId).single()
       if (!pedido) return err('Pedido não encontrado', 404)
       if ((pedido as any).status !== 'solicitado') return err('Só é possível editar pedidos com status "solicitado"')
 
-      const isDelivery = (pedido as any).tipo?.includes('delivery')
+      if (telefone_cliente) {
+        const telLimpo = telefone_cliente.replace(/\D/g, '')
+        if ((pedido as any).cliente_telefone !== telLimpo) return err('Pedido não pertence a este cliente', 403)
+      }
 
-      // 1. Remover itens e devolver estoque
       for (const itemId of itens_remover) {
         const { data: item } = await supabase.from('itens_pedido')
-          .select('*, pizza:pizzas!itens_pedido_pizza_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(pizza_ingredientes(ingrediente_id, quantidade)), pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(pizza_ingredientes(ingrediente_id, quantidade))')
+          .select('*, pizza:pizzas!itens_pedido_pizza_id_fkey(pizza_ingredientes(ingrediente_id, quantidade))')
           .eq('id', itemId).single()
         if (!item) continue
         const qtd = (item as any).quantidade || 1
-
         if ((item as any).tipo_item === 'bebida' && (item as any).bebida_id) {
           const { data: beb } = await supabase.from('bebidas').select('quantidade_estoque').eq('id', (item as any).bebida_id).single()
           if (beb) await supabase.from('bebidas').update({ quantidade_estoque: Number((beb as any).quantidade_estoque) + qtd }).eq('id', (item as any).bebida_id)
         }
-        if ((item as any).tipo_item === 'outro' && (item as any).outro_id) {
-          const { data: out } = await supabase.from('outros_produtos').select('quantidade_estoque').eq('id', (item as any).outro_id).single()
-          if (out) await supabase.from('outros_produtos').update({ quantidade_estoque: Number((out as any).quantidade_estoque) + qtd }).eq('id', (item as any).outro_id)
-        }
         if ((item as any).tipo_item === 'pizza') {
-          const ingredientes = [
-            ...((item as any).pizza?.pizza_ingredientes || []),
-            ...((item as any).pizza_metade_1?.pizza_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
-            ...((item as any).pizza_metade_2?.pizza_ingredientes || []).map((pi: any) => ({ ...pi, quantidade: pi.quantidade / 2 })),
-          ]
-          const mapa: Record<number, number> = {}
-          ingredientes.forEach((pi: any) => { mapa[pi.ingrediente_id] = (mapa[pi.ingrediente_id] || 0) + pi.quantidade * qtd })
-          for (const [ingId, qtdDev] of Object.entries(mapa)) {
-            const { data: ing } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', ingId).single()
-            if (ing) await supabase.from('ingredientes').update({ quantidade_estoque: Number((ing as any).quantidade_estoque) + qtdDev }).eq('id', ingId)
+          for (const pi of ((item as any).pizza?.pizza_ingredientes || [])) {
+            const { data: ing } = await supabase.from('ingredientes').select('quantidade_estoque').eq('id', pi.ingrediente_id).single()
+            if (ing) await supabase.from('ingredientes').update({ quantidade_estoque: Number((ing as any).quantidade_estoque) + pi.quantidade * qtd }).eq('id', pi.ingrediente_id)
           }
         }
         await supabase.from('itens_pedido').delete().eq('id', itemId)
       }
 
-      // 2. Alterar quantidade/borda de itens existentes
       for (const alt of itens_alterar) {
         if (!alt.id) continue
-        await supabase.from('itens_pedido').update({
-          quantidade: alt.quantidade,
-          borda_id: alt.borda_id ?? null,
-        }).eq('id', alt.id)
+        await supabase.from('itens_pedido').update({ quantidade: alt.quantidade, borda_id: alt.borda_id ?? null }).eq('id', alt.id)
       }
 
-      // 3. Adicionar novos itens e dar baixa de estoque
       for (const item of itens_adicionar) {
-        // Bebida em delivery: só pode adicionar se não estiver em delivery (aqui status é sempre "solicitado", então ok)
-        const { pizza_ingredientes, pizza_metade_1_ingredientes, pizza_metade_2_ingredientes, adicionais, ...itemData } = item
-        const { data: itemSalvo, error: errItem } = await supabase.from('itens_pedido')
-          .insert({ ...itemData, pedido_id: pedidoId }).select().single()
+        const { error: errItem } = await supabase.from('itens_pedido').insert({
+          pedido_id: pedidoId,
+          tipo_item: item.tipo_item,
+          pizza_id: item.pizza_id || null,
+          bebida_id: item.bebida_id || null,
+          outro_id: item.outro_id || null,
+          quantidade: Number(item.quantidade || 1),
+          meia_pizza: item.meia_pizza || false,
+          pizza_metade_1_id: item.pizza_metade_1_id || null,
+          pizza_metade_2_id: item.pizza_metade_2_id || null,
+          pizza_metade_3_id: item.pizza_metade_3_id || null,
+          tres_sabores: item.tres_sabores || false,
+          borda_id: item.borda_id || null,
+          observacao: item.observacao || null,
+          valor_unitario: Number(item.valor_unitario || 0),
+        })
         if (errItem) return err(errItem.message)
-
-        if (adicionais?.length) {
-          await supabase.from('adicionais_item').insert(
-            adicionais.map((a: any) => ({ ...a, item_pedido_id: (itemSalvo as any).id }))
-          )
-        }
-        await darBaixaEstoque([item])
+        // Sem baixa de estoque aqui — ocorre quando status muda para 'fazendo'
       }
 
-      // 4. Recalcular total
       const { data: todosItens } = await supabase.from('itens_pedido')
         .select('valor_unitario, quantidade').eq('pedido_id', pedidoId)
-      const novoTotal = (todosItens || []).reduce((acc: number, it: any) => acc + Number(it.valor_unitario) * it.quantidade, 0)
-        + Number((pedido as any).valor_frete || 0)
+      const novoTotal = (todosItens || []).reduce((acc: number, it: any) =>
+        acc + Number(it.valor_unitario) * it.quantidade, 0) + Number((pedido as any).valor_frete || 0)
       await supabase.from('pedidos').update({ valor_total: novoTotal }).eq('id', pedidoId)
 
       return ok({ editado: true, pedido_id: pedidoId, novo_total: novoTotal })
@@ -386,18 +336,26 @@ Deno.serve(async (req: Request) => {
 
     // ═══════════════════════════════════════════════
     // DELETE /pedido/:id — cancelar pedido e devolver estoque
-    // Body opcional: { motivo: string }
+    // Body opcional: { motivo, telefone_cliente }
     // ═══════════════════════════════════════════════
     if (req.method === 'DELETE' && parts[0] === 'pedido' && parts[1]) {
-      const { data: pedido } = await supabase.from('pedidos').select('status').eq('id', parts[1]).single()
+      const { data: pedido } = await supabase.from('pedidos')
+        .select('status, cliente_telefone').eq('id', parts[1]).single()
       if (!pedido) return err('Pedido não encontrado', 404)
       if (!['solicitado'].includes((pedido as any).status)) return err('Só é possível cancelar pedidos ainda em "solicitado"')
 
-      // Aceitar motivo no body (DELETE com body)
       let motivo: string | null = null
-      try { const body = await req.json(); motivo = body?.motivo || null } catch {}
+      try {
+        const body = await req.json()
+        motivo = body?.motivo || null
+        if (body?.telefone_cliente) {
+          const telLimpo = body.telefone_cliente.replace(/\D/g, '')
+          if ((pedido as any).cliente_telefone !== telLimpo) return err('Pedido não pertence a este cliente', 403)
+        }
+      } catch {}
 
-      await devolverEstoque(Number(parts[1]))
+      // Estoque NÃO é devolvido — só é baixado quando status muda para "fazendo"
+      // Cancelamento ocorre em "solicitado", antes de qualquer baixa
       await supabase.from('pedidos').update({
         status: 'devolvido',
         motivo_cancelamento: motivo,
