@@ -18,7 +18,8 @@ export function AlertasWhatsApp() {
         event: 'INSERT', schema: 'public', table: 'alertas_pdv'
       }, (payload) => {
         const alerta = payload.new as any
-        if (alerta.tipo === 'humano_necessario') {
+        // Aceita tanto "humano_necessario" quanto "atendente" (novo padrão)
+        if (alerta.tipo === 'humano_necessario' || alerta.tipo === 'atendente') {
           toast((t) => (
             <div className="flex items-start gap-3">
               <span className="text-2xl">🚨</span>
@@ -33,7 +34,7 @@ export function AlertasWhatsApp() {
                 </button>
               </div>
             </div>
-          ), { duration: 30000, style: { background: '#fff3e0', border: '2px solid #ff9800' } })
+          ), { duration: 30000, style: { background: '#7f1d1d', color: '#fca5a5', border: '2px solid #991b1b', borderRadius: '10px' } })
         }
 
         if (alerta.tipo === 'novo_pedido_wpp') {
