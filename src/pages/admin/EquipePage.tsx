@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motoboysDb, mesasDb, condominiosDb, configuracoesDb } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
@@ -243,20 +243,22 @@ function TabConfiguracoes() {
   const { data: config, isLoading } = useQuery({
     queryKey: ['configuracoes'],
     queryFn: configuracoesDb.buscar,
-    onSuccess: (data: any) => {
-      if (data) setForm({
-        pizzas_simultaneas: String(data.pizzas_simultaneas),
-        tempo_preparo_min: String(data.tempo_preparo_min)
-      })
-    }
-  } as any)
+  })
+
+  // Sincronizar form quando config carregar
+  useEffect(() => {
+    if (config) setForm({
+      pizzas_simultaneas: String((config as any).pizzas_simultaneas),
+      tempo_preparo_min: String((config as any).tempo_preparo_min)
+    })
+  }, [config])
 
   const { data: condominios = [] } = useQuery({ queryKey: ['condominios'], queryFn: condominiosDb.listarTodos })
   const [temposEntrega, setTemposEntrega] = useState<Record<number, string>>({})
   const [salvandoCond, setSalvandoCond] = useState<number | null>(null)
 
   // Inicializar tempos de entrega dos condomínios
-  useState(() => {
+  useEffect(() => {
     if (condominios && (condominios as any[]).length) {
       const tempos: Record<number, string> = {}
       ;(condominios as any[]).forEach((c: any) => {
@@ -264,7 +266,7 @@ function TabConfiguracoes() {
       })
       setTemposEntrega(tempos)
     }
-  })
+  }, [condominios])
 
   const salvarConfig = async () => {
     setSalvando(true)

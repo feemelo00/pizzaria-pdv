@@ -218,9 +218,16 @@ function KanbanCard({ pedido, onMudar, onDespachar, onCancelar, onEditar }: {
   onCancelar: () => void
   onEditar: () => void
 }) {
-  const minutos = Math.floor((Date.now() - new Date(pedido.data_criacao).getTime()) / 60000)
+  // Corrigir fuso horário — Supabase retorna UTC sem 'Z', JS interpreta como local
+  const dataCriacao = pedido.data_criacao.endsWith('Z')
+    ? new Date(pedido.data_criacao)
+    : new Date(pedido.data_criacao + 'Z')
+  const minutos = Math.floor((Date.now() - dataCriacao.getTime()) / 60000)
   const atrasado = ['fazendo','solicitado'].includes(pedido.status) && minutos > 30
-  const tempo = formatDistanceToNow(new Date(pedido.data_criacao), { locale: ptBR })
+  const tempo = formatDistanceToNow(dataCriacao, { addSuffix: false, locale: ptBR })
+
+  // Calcular estimativa de entrega (preparo + frete)
+  const horaFormatada = dataCriacao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
   const imprimirProducao = () => {
     const win = window.open('', '_blank')
@@ -243,9 +250,12 @@ function KanbanCard({ pedido, onMudar, onDespachar, onCancelar, onEditar }: {
           {pedido.tipo === 'retirada' && <span className="badge bg-purple-900/40 text-purple-400 border border-purple-800/40">🏪 Retirada</span>}
           {pedido.origem === 'whatsapp' && <span className="badge bg-green-900/40 text-green-400 border border-green-800/40">📱</span>}
         </div>
-        <div className={clsx('text-xs flex items-center gap-1 flex-shrink-0', atrasado ? 'text-red-400 font-medium' : 'text-gray-500')}>
-          {atrasado && <AlertTriangle size={11} />}
-          {atrasado ? `${minutos}min ⚠️` : tempo}
+        <div className={clsx('text-xs flex items-center gap-1 flex-shrink-0 flex-col items-end', atrasado ? 'text-red-400 font-medium' : 'text-gray-500')}>
+          <span className="text-gray-600">{horaFormatada}</span>
+          <span className={clsx('flex items-center gap-1', atrasado ? 'text-red-400' : 'text-gray-500')}>
+            {atrasado && <AlertTriangle size={11} />}
+            {atrasado ? `${minutos}min atraso` : tempo}
+          </span>
         </div>
       </div>
 
