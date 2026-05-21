@@ -242,7 +242,16 @@ function TabConfiguracoes() {
 
   const { data: config, isLoading } = useQuery({
     queryKey: ['configuracoes'],
-    queryFn: configuracoesDb.buscar,
+    queryFn: async () => {
+      const [capacidade, tempo] = await Promise.all([
+        configuracoesDb.get('capacidade_pizzas'),
+        configuracoesDb.get('tempo_por_lote_min')
+      ])
+      return {
+        pizzas_simultaneas: Number(capacidade || 4),
+        tempo_preparo_min: Number(tempo || 25)
+      }
+    }
   })
 
   // Sincronizar form quando config carregar
@@ -271,11 +280,12 @@ function TabConfiguracoes() {
   const salvarConfig = async () => {
     setSalvando(true)
     try {
-      await configuracoesDb.salvar({
-        pizzas_simultaneas: Number(form.pizzas_simultaneas),
-        tempo_preparo_min: Number(form.tempo_preparo_min)
-      })
+      await Promise.all([
+        configuracoesDb.set('capacidade_pizzas', form.pizzas_simultaneas),
+        configuracoesDb.set('tempo_por_lote_min', form.tempo_preparo_min)
+      ])
       qc.invalidateQueries({ queryKey: ['configuracoes'] })
+      qc.invalidateQueries({ queryKey: ['tempo-estimado'] })
       toast.success('Configurações salvas!')
     } catch (e: any) {
       toast.error(e.message)
