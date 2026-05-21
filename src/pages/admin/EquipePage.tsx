@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motoboysDb, mesasDb, condominiosDb, configuracoesDb } from '../../lib/db'
+import { motoboysDb, mesasDb, condominiosDb } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
 import { Table, Modal, FormField, ConfirmDialog, Empty, LoadingPage } from '../../components/ui'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
@@ -243,14 +243,8 @@ function TabConfiguracoes() {
   const { data: config, isLoading } = useQuery({
     queryKey: ['configuracoes'],
     queryFn: async () => {
-      const [capacidade, tempo] = await Promise.all([
-        configuracoesDb.get('capacidade_pizzas'),
-        configuracoesDb.get('tempo_por_lote_min')
-      ])
-      return {
-        pizzas_simultaneas: Number(capacidade || 4),
-        tempo_preparo_min: Number(tempo || 25)
-      }
+      const { data } = await supabase.from('configuracoes').select('*').eq('id', 1).single()
+      return data ?? { pizzas_simultaneas: 4, tempo_preparo_min: 25 }
     }
   })
 
@@ -280,10 +274,13 @@ function TabConfiguracoes() {
   const salvarConfig = async () => {
     setSalvando(true)
     try {
-      await Promise.all([
-        configuracoesDb.set('capacidade_pizzas', form.pizzas_simultaneas),
-        configuracoesDb.set('tempo_por_lote_min', form.tempo_preparo_min)
-      ])
+      const { error } = await supabase.from('configuracoes').upsert({
+        id: 1,
+        pizzas_simultaneas: Number(form.pizzas_simultaneas),
+        tempo_preparo_min: Number(form.tempo_preparo_min),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' })
+      if (error) throw new Error(error.message)
       qc.invalidateQueries({ queryKey: ['configuracoes'] })
       qc.invalidateQueries({ queryKey: ['tempo-estimado'] })
       toast.success('Configurações salvas!')
