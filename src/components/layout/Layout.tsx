@@ -88,9 +88,13 @@ export function Layout() {
 
   const navItems = isProprietario ? [...navFuncionario, ...navAdmin] : navFuncionario
 
+  // Itens visíveis na barra mobile (só os principais)
+  const navMobile = navFuncionario
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-950">
-      <aside className="w-16 lg:w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
+      {/* Sidebar desktop */}
+      <aside className="hidden md:flex w-16 lg:w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex-col">
         <div className="h-14 flex items-center gap-3 px-4 border-b border-gray-800">
           <span className="text-2xl">🍕</span>
           <span className="hidden lg:block font-bold text-gray-100 text-sm">PDV Pizzaria</span>
@@ -141,7 +145,41 @@ export function Layout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-hidden flex flex-col"><Outlet /></main>
+
+      {/* Conteúdo principal */}
+      <main className="flex-1 overflow-hidden flex flex-col pb-16 md:pb-0">
+        <Outlet />
+      </main>
+
+      {/* Barra de navegação inferior — mobile only */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-900 border-t border-gray-800 flex items-center justify-around px-2 py-1 safe-area-bottom">
+        {navMobile.map(({ to, icon: Icon, label }) => {
+          const isWhatsApp = to === '/whatsapp'
+          return (
+            <NavLink key={to} to={to}
+              className={({ isActive }) => clsx(
+                'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[56px]',
+                isActive ? 'text-pizza-400' : 'text-gray-500'
+              )}>
+              <div className="relative">
+                <Icon size={22} />
+                {isWhatsApp && alertasCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5 animate-pulse">
+                    {alertasCount > 9 ? '9+' : alertasCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-medium">{label}</span>
+            </NavLink>
+          )
+        })}
+        {/* Botão sair no mobile */}
+        <button onClick={handleLogout}
+          className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-gray-500 min-w-[56px]">
+          <LogOut size={22} />
+          <span className="text-[10px] font-medium">Sair</span>
+        </button>
+      </nav>
     </div>
   )
 }

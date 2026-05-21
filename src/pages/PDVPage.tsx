@@ -31,6 +31,7 @@ export function PDVPage() {
   const [mesaSelecionada, setMesaSelecionada] = useState<Mesa | null>(null)
   const [modalEnderecoDelivery, setModalEnderecoDelivery] = useState(false)
   const carrinho = useCarrinhoStore()
+  const [carrinhoAberto, setCarrinhoAberto] = useState(false)
 
   const { data: pizzas = [] }  = useQuery({ queryKey: ['pizzas-disp'], queryFn: pizzasDb.listarDisponiveis })
   const { data: bebidas = [] } = useQuery({ queryKey: ['bebidas-disp'], queryFn: bebidasDb.listarDisponiveis })
@@ -135,8 +136,8 @@ export function PDVPage() {
   })
 
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* Área esquerda */}
+    <div className="flex h-full overflow-hidden relative">
+      {/* Área esquerda — produtos */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Barra superior */}
         <div className="bg-gray-900 border-b border-gray-800 px-4 py-2 space-y-2 flex-shrink-0">
@@ -202,7 +203,7 @@ export function PDVPage() {
         {/* Grid produtos */}
         <div className="flex-1 overflow-y-auto p-3">
           {aba === 'pizzas' && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {(pizzas as Pizza[]).filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase())).map(p => (
                 <CardProduto key={p.id} nome={p.nome} sub={p.tamanho} preco={p.preco} onClick={() => setPizzaModal(p)} />
               ))}
@@ -214,7 +215,7 @@ export function PDVPage() {
             </div>
           )}
           {aba === 'bebidas' && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {(bebidas as Bebida[]).filter(b => !busca || b.nome.toLowerCase().includes(busca.toLowerCase())).map(b => (
                 <CardProduto key={b.id} nome={b.nome} sub={b.tamanho || ''} preco={b.preco}
                   onClick={() => { carrinho.adicionarItem({ _id: crypto.randomUUID(), tipo_item: 'bebida', bebida_id: b.id, bebida_nome: b.nome, quantidade: 1, valor_unitario: Number(b.preco), adicionais: [] }); toast.success(`${b.nome} adicionado`, { duration: 1500 }) }} />
@@ -223,7 +224,7 @@ export function PDVPage() {
             </div>
           )}
           {aba === 'outros' && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {(outros as OutroProduto[]).filter(o => !busca || o.nome.toLowerCase().includes(busca.toLowerCase())).map(o => (
                 <CardProduto key={o.id} nome={o.nome} sub={o.tamanho || ''} preco={o.preco}
                   onClick={() => { carrinho.adicionarItem({ _id: crypto.randomUUID(), tipo_item: 'outro', outro_id: o.id, outro_nome: o.nome, quantidade: 1, valor_unitario: Number(o.preco), adicionais: [] }); toast.success(`${o.nome} adicionado`, { duration: 1500 }) }} />
@@ -234,16 +235,49 @@ export function PDVPage() {
         </div>
       </div>
 
+      {/* Botão flutuante carrinho — mobile only */}
+      {!carrinhoAberto && (
+        <button
+          onClick={() => setCarrinhoAberto(true)}
+          className="md:hidden fixed bottom-20 right-4 z-40 bg-pizza-500 hover:bg-pizza-600 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-2xl shadow-pizza-500/40 active:scale-95 transition-all">
+          <div className="relative">
+            <ShoppingCart size={22} />
+            {carrinho.itens.length > 0 && (
+              <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] bg-white text-pizza-500 text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
+                {carrinho.itens.length}
+              </span>
+            )}
+          </div>
+        </button>
+      )}
+
+      {/* Overlay mobile */}
+      {carrinhoAberto && (
+        <div className="md:hidden fixed inset-0 z-30 bg-black/60" onClick={() => setCarrinhoAberto(false)} />
+      )}
+
       {/* Carrinho */}
-      <div className="w-72 xl:w-80 flex-shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col">
+      <div className={clsx(
+        'flex-shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col transition-transform duration-300',
+        // Desktop: sempre visível
+        'md:w-72 xl:w-80 md:relative md:translate-x-0',
+        // Mobile: drawer lateral direito
+        'fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm',
+        carrinhoAberto ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
+      )}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
           <div className="flex items-center gap-2">
             <ShoppingCart size={16} className="text-pizza-400" />
             <span className="font-semibold text-gray-200 text-sm">Pedido</span>
           </div>
-          {carrinho.itens.length > 0 && (
-            <button onClick={carrinho.limpar} className="text-xs text-gray-600 hover:text-red-400 transition-colors">Limpar</button>
-          )}
+          <div className="flex items-center gap-2">
+            {carrinho.itens.length > 0 && (
+              <button onClick={carrinho.limpar} className="text-xs text-gray-600 hover:text-red-400 transition-colors">Limpar</button>
+            )}
+            <button onClick={() => setCarrinhoAberto(false)} className="md:hidden text-gray-500 hover:text-gray-300 p-1">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
