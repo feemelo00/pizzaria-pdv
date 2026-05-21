@@ -1,14 +1,105 @@
+
+// ── Navegação mobile com menu "Mais" ──────────────────────────
+function MobileNav({ navMobile, navAdmin, alertasCount, onLogout }: {
+  navMobile: typeof navFuncionario
+  navAdmin: typeof navAdmin
+  alertasCount: number
+  onLogout: () => void
+}) {
+  const [maisAberto, setMaisAberto] = useState(false)
+  const temAdmin = navAdmin.length > 0
+
+  return (
+    <>
+      {/* Overlay do menu Mais */}
+      {maisAberto && (
+        <div className="md:hidden fixed inset-0 z-40 bg-black/60" onClick={() => setMaisAberto(false)} />
+      )}
+
+      {/* Drawer menu Mais */}
+      {maisAberto && (
+        <div className="md:hidden fixed bottom-16 left-0 right-0 z-50 bg-gray-900 border-t border-gray-800 rounded-t-2xl p-4 shadow-2xl">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-gray-200">Menu</span>
+            <button onClick={() => setMaisAberto(false)} className="text-gray-500 p-1"><X size={18} /></button>
+          </div>
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {navAdmin.map(({ to, icon: Icon, label }) => (
+              <NavLink key={to} to={to} onClick={() => setMaisAberto(false)}
+                className={({ isActive }) => clsx(
+                  'flex flex-col items-center gap-1 p-3 rounded-xl border transition-all',
+                  isActive
+                    ? 'border-pizza-500/40 bg-pizza-500/10 text-pizza-400'
+                    : 'border-gray-800 text-gray-500 hover:text-gray-300 hover:border-gray-700'
+                )}>
+                <Icon size={20} />
+                <span className="text-[10px] font-medium text-center leading-tight">{label}</span>
+              </NavLink>
+            ))}
+          </div>
+          <button onClick={() => { setMaisAberto(false); onLogout() }}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-red-900/40 text-red-400 text-sm">
+            <LogOut size={16} /> Sair
+          </button>
+        </div>
+      )}
+
+      {/* Barra inferior */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-900 border-t border-gray-800 flex items-center justify-around px-1 py-1">
+        {navMobile.map(({ to, icon: Icon, label }) => {
+          const isWhatsApp = to === '/whatsapp'
+          return (
+            <NavLink key={to} to={to}
+              className={({ isActive }) => clsx(
+                'flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all flex-1',
+                isActive ? 'text-pizza-400' : 'text-gray-500'
+              )}>
+              <div className="relative">
+                <Icon size={22} />
+                {isWhatsApp && alertasCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5 animate-pulse">
+                    {alertasCount > 9 ? '9+' : alertasCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-medium">{label}</span>
+            </NavLink>
+          )
+        })}
+
+        {/* Botão Mais — só aparece se tiver itens admin */}
+        {temAdmin ? (
+          <button onClick={() => setMaisAberto(v => !v)}
+            className={clsx(
+              'flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all flex-1',
+              maisAberto ? 'text-pizza-400' : 'text-gray-500'
+            )}>
+            <MoreHorizontal size={22} />
+            <span className="text-[10px] font-medium">Mais</span>
+          </button>
+        ) : (
+          <button onClick={onLogout}
+            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-gray-500 flex-1">
+            <LogOut size={22} />
+            <span className="text-[10px] font-medium">Sair</span>
+          </button>
+        )}
+      </nav>
+    </>
+  )
+}
+
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   ShoppingCart, KanbanSquare, Settings, LogOut,
   Package, Users, BarChart3, UtensilsCrossed,
-  ClipboardList, History, TrendingUp, MessageCircle
+  ClipboardList, History, TrendingUp, MessageCircle, MoreHorizontal, X
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 
 const navFuncionario = [
@@ -88,7 +179,6 @@ export function Layout() {
 
   const navItems = isProprietario ? [...navFuncionario, ...navAdmin] : navFuncionario
 
-  // Itens visíveis na barra mobile (só os principais)
   const navMobile = navFuncionario
 
   return (
@@ -152,34 +242,12 @@ export function Layout() {
       </main>
 
       {/* Barra de navegação inferior — mobile only */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-900 border-t border-gray-800 flex items-center justify-around px-2 py-1 safe-area-bottom">
-        {navMobile.map(({ to, icon: Icon, label }) => {
-          const isWhatsApp = to === '/whatsapp'
-          return (
-            <NavLink key={to} to={to}
-              className={({ isActive }) => clsx(
-                'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[56px]',
-                isActive ? 'text-pizza-400' : 'text-gray-500'
-              )}>
-              <div className="relative">
-                <Icon size={22} />
-                {isWhatsApp && alertasCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5 animate-pulse">
-                    {alertasCount > 9 ? '9+' : alertasCount}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] font-medium">{label}</span>
-            </NavLink>
-          )
-        })}
-        {/* Botão sair no mobile */}
-        <button onClick={handleLogout}
-          className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-gray-500 min-w-[56px]">
-          <LogOut size={22} />
-          <span className="text-[10px] font-medium">Sair</span>
-        </button>
-      </nav>
+      <MobileNav
+        navMobile={navMobile}
+        navAdmin={isProprietario ? navAdmin : []}
+        alertasCount={alertasCount}
+        onLogout={handleLogout}
+      />
     </div>
   )
 }
