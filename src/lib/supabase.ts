@@ -8,7 +8,21 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  realtime: { params: { eventsPerSecond: 10 } }
+  realtime: {
+    params: { eventsPerSecond: 10 }
+  },
+  auth: {
+    // Renova o token automaticamente antes de expirar
+    autoRefreshToken: true,
+    // Persiste sessão no localStorage (padrão, garante manter login após F5)
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+  global: {
+    headers: {
+      'x-client-info': 'pizzaria-pdv/1.0'
+    }
+  }
 })
 
 export type Database = {
@@ -35,7 +49,7 @@ export type Database = {
 
 // Tipos das entidades
 export type Condominio = {
-  id: number; nome: string; valor_frete: number; ativo: boolean; created_at: string
+  id: number; nome: string; valor_frete: number; tempo_entrega_min?: number; ativo: boolean; created_at: string
 }
 export type Cliente = {
   telefone: string; nome: string; condominio_id: number; quadra: string
@@ -73,6 +87,9 @@ export type Borda = {
 }
 export type StatusPedido = 'solicitado'|'fazendo'|'pronto'|'delivery'|'balcao'|'finalizado'|'devolvido'
 export type TipoPedido = 'delivery'|'retirada'|'mesa'
+export type Mesa = {
+  id: number; nome: string; status: 'livre'|'ocupada'; created_at?: string
+}
 export type Pedido = {
   id: number; cliente_telefone: string | null; tipo: TipoPedido; status: StatusPedido
   mesa_id: number | null; mesa?: Mesa

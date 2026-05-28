@@ -5,10 +5,11 @@ import { supabase } from '../lib/supabase'
 import { StatusBadge, Modal, Spinner } from '../components/ui'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Printer, ChevronRight, AlertTriangle, Truck, Pencil, X, Plus, Trash2 } from 'lucide-react'
+import { Printer, ChevronRight, AlertTriangle, Truck, Pencil, X, Plus, Trash2, WifiOff } from 'lucide-react'
 import type { StatusPedido, Motoboy } from '../lib/supabase'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
+import { useRealtimePedidos } from '../hooks/useRealtime'
 
 const COLUNAS: { status: StatusPedido | 'na_mesa'; label: string; cor: string }[] = [
   { status: 'solicitado', label: 'Solicitados',  cor: 'border-t-yellow-500' },
@@ -25,7 +26,20 @@ export function KanbanPage() {
   const [modalMotoboy, setModalMotoboy] = useState<{ pedidoId: number } | null>(null)
   const [modalCancelar, setModalCancelar] = useState<{ pedido: any } | null>(null)
   const [modalEditar, setModalEditar] = useState<{ pedido: any } | null>(null)
+  const [online, setOnline] = useState(navigator.onLine)
   const queryClient = useQueryClient()
+
+  // Monitorar conexão com a internet
+  useEffect(() => {
+    const handleOnline = () => { setOnline(true); refetch() }
+    const handleOffline = () => setOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   const { data: motoboys = [] } = useQuery({ queryKey: ['motoboys'], queryFn: motoboysDb.listar })
 
@@ -38,24 +52,21 @@ export function KanbanPage() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['pedidos-ativos'],
     queryFn: pedidosDb.listarAtivos,
-    refetchInterval: 10_000,
+    refetchInterval: online ? 10_000 : false, // Para de refetchar se offline
     refetchIntervalInBackground: true,
+    retry: 2,
   })
+
+  // Realtime via WebSocket (substitui polling quando online)
+  useRealtimePedidos(useCallback((_pedido, evento) => {
+    if (evento === 'INSERT' || evento === 'UPDATE') {
+      setTimeout(() => refetch(), 300)
+    }
+  }, []))
 
   useEffect(() => {
     if (!data) return
     if (ultimoCount > 0 && (data as any[]).length > ultimoCount) {
-      try {
-        const ctx = new AudioContext()
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.connect(gain); gain.connect(ctx.destination)
-        osc.frequency.setValueAtTime(880, ctx.currentTime)
-        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1)
-        gain.gain.setValueAtTime(0.3, ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
-        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4)
-      } catch {}
       toast.success('🍕 Novo pedido chegou!', { duration: 8000 })
     }
     setUltimoCount((data as any[]).length)
@@ -136,9 +147,17 @@ export function KanbanPage() {
       <div className="flex items-center justify-between px-4 h-12 border-b border-gray-800 bg-gray-900 flex-shrink-0">
         <h1 className="font-semibold text-gray-100 text-sm">Kanban de Pedidos</h1>
         <div className="flex items-center gap-3">
+          {!online && (
+            <div className="flex items-center gap-1.5 bg-red-900/30 border border-red-800/50 rounded-lg px-2 py-1">
+              <WifiOff size={12} className="text-red-400" />
+              <span className="text-xs text-red-400">Sem conexão</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-xs text-green-400">Atualizando a cada 10s</span>
+            <div className={clsx('w-2 h-2 rounded-full', online ? 'bg-green-400 animate-pulse' : 'bg-red-500')} />
+            <span className={clsx('text-xs', online ? 'text-green-400' : 'text-red-400')}>
+              {online ? 'Ao vivo' : 'Offline'}
+            </span>
           </div>
           <span className="text-xs text-gray-500">{pedidos.length} ativos</span>
           {tempoEstimado && (

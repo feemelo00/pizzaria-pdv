@@ -268,34 +268,42 @@ export const bordasDb = {
 // ============================================================
 export const pedidosDb = {
   listarAtivos: async () => {
-    const { data, error } = await supabase.from('pedidos')
-      .select(`
-        *,
-        mesa:mesas(id, nome, status),
-        cliente:clientes(nome, telefone, quadra, lote, rua, condominio:condominios(nome, valor_frete)),
-        condominio:condominios!pedidos_condominio_id_fkey(nome, valor_frete, tempo_entrega_min),
-        endereco_temp_condominio:condominios!pedidos_endereco_temp_condominio_id_fkey(nome),
-        motoboy:motoboys(nome),
-        itens_pedido(
+    try {
+      const { data, error } = await supabase.from('pedidos')
+        .select(`
           *,
-          pizza:pizzas!itens_pedido_pizza_id_fkey(id, nome, preco),
-          pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(id, nome, preco),
-          pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(id, nome, preco),
-          pizza_metade_3:pizzas!itens_pedido_pizza_metade_3_id_fkey(id, nome, preco),
-          bebida:bebidas(id, nome),
-          outro:outros_produtos(id, nome),
-          borda:bordas(id, nome, preco),
-          adicionais_item(*, ingrediente:ingredientes(id, nome, preco_adicional))
-        )
-      `)
-      .in('status', ['solicitado','fazendo','pronto','delivery','balcao'])
-      .order('data_criacao', { ascending: true })
-    if (error) console.error('listarAtivos erro:', error)
-    // Normalizar nome do condomínio temporário para facilitar uso nos componentes
-    return (data ?? []).map((p: any) => ({
-      ...p,
-      endereco_temp_condominio_nome: p.endereco_temp_condominio?.nome ?? null,
-    }))
+          mesa:mesas(id, nome, status),
+          cliente:clientes(nome, telefone, quadra, lote, rua, condominio:condominios(nome, valor_frete)),
+          condominio:condominios!pedidos_condominio_id_fkey(nome, valor_frete, tempo_entrega_min),
+          endereco_temp_condominio:condominios!pedidos_endereco_temp_condominio_id_fkey(nome),
+          motoboy:motoboys(nome),
+          itens_pedido(
+            *,
+            pizza:pizzas!itens_pedido_pizza_id_fkey(id, nome, preco),
+            pizza_metade_1:pizzas!itens_pedido_pizza_metade_1_id_fkey(id, nome, preco),
+            pizza_metade_2:pizzas!itens_pedido_pizza_metade_2_id_fkey(id, nome, preco),
+            pizza_metade_3:pizzas!itens_pedido_pizza_metade_3_id_fkey(id, nome, preco),
+            bebida:bebidas(id, nome),
+            outro:outros_produtos(id, nome),
+            borda:bordas(id, nome, preco),
+            adicionais_item(*, ingrediente:ingredientes(id, nome, preco_adicional))
+          )
+        `)
+        .in('status', ['solicitado','fazendo','pronto','delivery','balcao'])
+        .order('data_criacao', { ascending: true })
+      if (error) {
+        console.error('[pedidosDb.listarAtivos] erro:', error)
+        return []
+      }
+      // Normalizar nome do condomínio temporário para facilitar uso nos componentes
+      return (data ?? []).map((p: any) => ({
+        ...p,
+        endereco_temp_condominio_nome: p.endereco_temp_condominio?.nome ?? null,
+      }))
+    } catch (err) {
+      console.error('[pedidosDb.listarAtivos] exceção:', err)
+      return []
+    }
   },
   listar: async (filtros?: { data?: string; status?: string; clienteTelefone?: string }) => {
     let q = supabase.from('pedidos')
@@ -662,8 +670,10 @@ export const mesasDb = {
 // ============================================================
 export const configuracoesDb = {
   get: async (chave: string) => {
-    const { data } = await supabase.from('configuracoes').select('valor').eq('chave', chave).single()
-    return data?.valor ?? null
+    try {
+      const { data } = await supabase.from('configuracoes').select('valor').eq('chave', chave).single()
+      return data?.valor ?? null
+    } catch { return null }
   },
   set: async (chave: string, valor: string) => {
     const { error } = await supabase.from('configuracoes')
@@ -673,6 +683,21 @@ export const configuracoesDb = {
   listar: async () => {
     const { data } = await supabase.from('configuracoes').select('*').order('chave')
     return data ?? []
+  },
+  // Retorna objeto com os valores mais usados, com defaults seguros
+  buscar: async (): Promise<{ pizzas_simultaneas: number; tempo_preparo_min: number }> => {
+    try {
+      const [cap, tempo] = await Promise.all([
+        configuracoesDb.get('capacidade_pizzas'),
+        configuracoesDb.get('tempo_por_lote_min')
+      ])
+      return {
+        pizzas_simultaneas: Number(cap || 4),
+        tempo_preparo_min: Number(tempo || 25),
+      }
+    } catch {
+      return { pizzas_simultaneas: 4, tempo_preparo_min: 25 }
+    }
   },
   calcularTempoEstimado: async (pizzasNaFila: number, condominioId?: number | null) => {
     const [capStr, tempoStr] = await Promise.all([
@@ -707,29 +732,37 @@ export const configuracoesDb = {
 // ============================================================
 export const tempoEstimadoDb = {
   calcular: async (condominioId?: number | null): Promise<{ preparo: number; entrega: number; total: number; pizzasNaFila: number }> => {
-    const config = await configuracoesDb.buscar()
+    try {
+      const config = await configuracoesDb.buscar()
 
-    const { data: pedidosAtivos } = await supabase.from('pedidos')
-      .select('itens_pedido(tipo_item, quantidade)')
-      .in('status', ['solicitado', 'fazendo'])
+      const { data: pedidosAtivos } = await supabase.from('pedidos')
+        .select('itens_pedido(tipo_item, quantidade)')
+        .in('status', ['solicitado', 'fazendo'])
 
-    let pizzasNaFila = 0
-    ;(pedidosAtivos ?? []).forEach((p: any) => {
-      ;(p.itens_pedido ?? []).forEach((item: any) => {
-        if (item.tipo_item === 'pizza') pizzasNaFila += item.quantidade
+      let pizzasNaFila = 0
+      ;(pedidosAtivos ?? []).forEach((p: any) => {
+        ;(p.itens_pedido ?? []).forEach((item: any) => {
+          if (item.tipo_item === 'pizza') pizzasNaFila += Number(item.quantidade) || 0
+        })
       })
-    })
 
-    const lotes = Math.ceil(Math.max(pizzasNaFila, 1) / config.pizzas_simultaneas)
-    const tempoPreparo = lotes * config.tempo_preparo_min
+      const lotes = Math.ceil(Math.max(pizzasNaFila, 1) / (config.pizzas_simultaneas || 4))
+      const tempoPreparo = lotes * (config.tempo_preparo_min || 25)
 
-    let tempoEntrega = 30
-    if (condominioId) {
-      const { data: cond } = await supabase.from('condominios')
-        .select('tempo_entrega_min').eq('id', condominioId).single()
-      if (cond?.tempo_entrega_min) tempoEntrega = cond.tempo_entrega_min
+      let tempoEntrega = 30
+      if (condominioId) {
+        try {
+          const { data: cond } = await supabase.from('condominios')
+            .select('tempo_entrega_min').eq('id', condominioId).single()
+          if (cond?.tempo_entrega_min) tempoEntrega = cond.tempo_entrega_min
+        } catch { /* usa default 30 */ }
+      }
+
+      return { preparo: tempoPreparo, entrega: tempoEntrega, total: tempoPreparo + tempoEntrega, pizzasNaFila }
+    } catch (err) {
+      console.error('[tempoEstimadoDb.calcular]', err)
+      // Fallback seguro — não derruba a UI
+      return { preparo: 25, entrega: 30, total: 55, pizzasNaFila: 0 }
     }
-
-    return { preparo: tempoPreparo, entrega: tempoEntrega, total: tempoPreparo + tempoEntrega, pizzasNaFila }
   }
 }
