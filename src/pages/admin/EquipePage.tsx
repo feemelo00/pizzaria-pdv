@@ -53,7 +53,7 @@ function TabMotoboys() {
   })
   const { mutate: excluir } = useMutation({
     mutationFn: (id: number) => motoboysDb.excluir(id),
-    onSuccess: () => { qc.invalidateQueries({queryKey:['motoboys-admin']}); toast.success('Desativado') }
+    onSuccess: () => { qc.invalidateQueries({queryKey:['motoboys-admin']}); qc.invalidateQueries({queryKey:['motoboys']}); toast.success('Desativado') }
   })
   return (
     <div className="p-4">

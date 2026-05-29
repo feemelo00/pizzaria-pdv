@@ -89,7 +89,7 @@ function TabPizzas() {
   })
   const { mutate: excluir } = useMutation({
     mutationFn: (id: number) => pizzasDb.excluir(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pizzas-admin'] }); toast.success('Pizza desativada') }
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pizzas-admin'] }); qc.invalidateQueries({ queryKey: ['pizzas-disp'] }); toast.success('Pizza desativada') }
   })
 
   return (

@@ -64,9 +64,9 @@ const qc = new QueryClient({
         if (error?.status === 401 || error?.status === 403 || error?.status === 404) return false
         return failureCount < 2
       },
-      staleTime: 30_000,
-      // Não refetcha automaticamente se a janela está em foco mas sem mudanças
-      refetchOnWindowFocus: false,
+      staleTime: 0,
+
+      refetchOnWindowFocus: true,
     },
     mutations: {
       retry: 0, // Mutações nunca repetem automaticamente
