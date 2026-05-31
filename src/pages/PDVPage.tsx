@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { pizzasDb, bebidasDb, outrosDb, bordasDb, ingredientesDb, clientesDb, condominiosDb, pedidosDb, mesasDb } from '../lib/db'
 import { useCarrinhoStore, type ItemCarrinho } from '../store/carrinhoStore'
 import { Modal, FormField, Spinner, Empty } from '../components/ui'
@@ -32,6 +32,7 @@ export function PDVPage() {
   const [modalEnderecoDelivery, setModalEnderecoDelivery] = useState(false)
   const carrinho = useCarrinhoStore()
   const [carrinhoAberto, setCarrinhoAberto] = useState(false)
+  const qc = useQueryClient()
 
   const { data: pizzas = [] }  = useQuery({ queryKey: ['pizzas-disp'], queryFn: pizzasDb.listarDisponiveis })
   const { data: bebidas = [] } = useQuery({ queryKey: ['bebidas-disp'], queryFn: bebidasDb.listarDisponiveis })
@@ -128,6 +129,13 @@ export function PDVPage() {
       if (mesaSelecionada && mesaSelecionada.status === 'livre') {
         await mesasDb.ocupar(mesaSelecionada.id)
       }
+      // Kanban e Comanda veem o novo pedido imediatamente
+      qc.invalidateQueries({ queryKey: ['pedidos-ativos'] })
+      qc.invalidateQueries({ queryKey: ['mesas'] })
+      qc.invalidateQueries({ queryKey: ['tempo-estimado'] })
+      qc.invalidateQueries({ queryKey: ['bebidas-disp'] })
+      qc.invalidateQueries({ queryKey: ['ingredientes-admin'] })
+      qc.invalidateQueries({ queryKey: ['estoque-baixo'] })
       setMesaSelecionada(null)
       setEnderecoTemp(null)
       carrinho.limpar()

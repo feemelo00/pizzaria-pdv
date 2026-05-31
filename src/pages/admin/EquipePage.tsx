@@ -157,7 +157,7 @@ function TabMesas() {
   })
   const { mutate: excluir } = useMutation({
     mutationFn: (id: number) => mesasDb.excluir(id),
-    onSuccess: () => { qc.invalidateQueries({queryKey:['mesas-admin']}); toast.success('Mesa excluída') },
+    onSuccess: () => { qc.invalidateQueries({queryKey:['mesas-admin']}); qc.invalidateQueries({queryKey:['mesas']}); toast.success('Mesa excluída') },
     onError: () => toast.error('Não é possível excluir mesa com pedidos vinculados')
   })
   return (

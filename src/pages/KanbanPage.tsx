@@ -81,13 +81,15 @@ export function KanbanPage() {
         if (['finalizado','devolvido'].includes(status)) return prev.filter(p => p.id !== id)
         return prev.map(p => p.id === id ? { ...p, status } : p)
       })
+      // Invalida pedidos e mesas para PDV/ComandaMesa também verem a mudança
+      queryClient.invalidateQueries({ queryKey: ['pedidos-ativos'] })
+      queryClient.invalidateQueries({ queryKey: ['mesas'] })
       toast.success(`Status → ${status}`)
-      setTimeout(() => refetch(), 500)
     },
     onError: (err: Error) => toast.error(err.message)
   })
 
-  // ── [MELHORIA 3] Cancelar com motivo ──────────────────────────
+  // ── Cancelar com motivo ──────────────────────────
   const { mutate: cancelarPedido, isPending: cancelando } = useMutation({
     mutationFn: async ({ pedidoId, motivo }: { pedidoId: number; motivo: string }) => {
       await pedidosDb.cancelar(pedidoId, motivo)
@@ -95,8 +97,9 @@ export function KanbanPage() {
     onSuccess: (_, { pedidoId }) => {
       setPedidos(prev => prev.filter(p => p.id !== pedidoId))
       setModalCancelar(null)
+      queryClient.invalidateQueries({ queryKey: ['pedidos-ativos'] })
+      queryClient.invalidateQueries({ queryKey: ['mesas'] })
       toast.success('Pedido cancelado')
-      setTimeout(() => refetch(), 500)
     },
     onError: (e: Error) => toast.error(e.message)
   })
@@ -114,13 +117,14 @@ export function KanbanPage() {
       const motoboy = (motoboys as Motoboy[]).find(m => m.id === motoboyId)
       setPedidos(prev => prev.map(p => p.id === pedidoId ? { ...p, status: 'delivery', motoboy, motoboy_id: motoboyId } : p))
       setModalMotoboy(null)
+      queryClient.invalidateQueries({ queryKey: ['pedidos-ativos'] })
+      queryClient.invalidateQueries({ queryKey: ['mesas'] })
       const pedido = pedidos.find(p => p.id === pedidoId)
       if (pedido && motoboy) {
         const win = window.open('', '_blank')
         if (win) { win.document.write(gerarHTMLEntrega({ ...pedido, motoboy })); win.document.close(); setTimeout(() => win.print(), 500) }
       }
       toast.success('Motoboy despachado!')
-      refetch()
     },
     onError: (e: Error) => toast.error(e.message)
   })
@@ -135,7 +139,12 @@ export function KanbanPage() {
   const onPedidoEditado = (pedidoAtualizado: any) => {
     setPedidos(prev => prev.map(p => p.id === pedidoAtualizado.id ? pedidoAtualizado : p))
     setModalEditar(null)
-    setTimeout(() => refetch(), 500)
+    // Invalida tudo que pode ter mudado: pedidos, estoque de bebidas/ingredientes
+    queryClient.invalidateQueries({ queryKey: ['pedidos-ativos'] })
+    queryClient.invalidateQueries({ queryKey: ['mesas'] })
+    queryClient.invalidateQueries({ queryKey: ['bebidas-disp'] })
+    queryClient.invalidateQueries({ queryKey: ['ingredientes-admin'] })
+    queryClient.invalidateQueries({ queryKey: ['tempo-estimado'] })
   }
 
   if (isLoading && !pedidos.length) return (
@@ -503,8 +512,8 @@ function ModalEditarPedido({ pedido, onClose, onSalvo }: {
   const [salvando, setSalvando] = useState(false)
   const [abaAtiva, setAbaAtiva] = useState<'pizza' | 'bebida' | 'outro'>('pizza')
 
-  const { data: pizzas = [] } = useQuery({ queryKey: ['pizzas-disponiveis'], queryFn: pizzasDb.listarDisponiveis })
-  const { data: bebidas = [] } = useQuery({ queryKey: ['bebidas-disponiveis'], queryFn: bebidasDb.listarDisponiveis })
+  const { data: pizzas = [] } = useQuery({ queryKey: ['pizzas-disp'], queryFn: pizzasDb.listarDisponiveis })
+  const { data: bebidas = [] } = useQuery({ queryKey: ['bebidas-disp'], queryFn: bebidasDb.listarDisponiveis })
   const { data: bordas = [] } = useQuery({ queryKey: ['bordas'], queryFn: bordasDb.listar })
   const { data: adicionais = [] } = useQuery({ queryKey: ['adicionais'], queryFn: ingredientesDb.listarAdicionais })
 

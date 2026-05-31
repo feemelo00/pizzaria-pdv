@@ -59,13 +59,13 @@ function TabIngredientes() {
       const d = { nome: form.nome, unidade: form.unidade, quantidade_estoque: Number(form.quantidade_estoque), estoque_minimo: Number(form.estoque_minimo), permite_adicional: form.permite_adicional, quantidade_adicional: form.permite_adicional ? Number(form.quantidade_adicional) : null, preco_adicional: form.permite_adicional ? Number(form.preco_adicional) : 0 }
       return ed ? ingredientesDb.atualizar(ed.id, d) : ingredientesDb.criar(d)
     },
-    onSuccess: () => { qc.invalidateQueries({queryKey:['ingredientes-admin']}); qc.invalidateQueries({queryKey:['ingredientes']}); setModal(false); toast.success('Salvo!') },
+    onSuccess: () => { qc.invalidateQueries({queryKey:['ingredientes-admin']}); qc.invalidateQueries({queryKey:['ingredientes']}); qc.invalidateQueries({queryKey:['adicionais']}); setModal(false); toast.success('Salvo!') },
     onError: (e: Error) => toast.error(e.message)
   })
 
   const { mutate: fazerEntrada, isPending: entrando } = useMutation({
     mutationFn: () => ingredientesDb.entradaEstoque(modalEntrada.id, Number(entrada.quantidade), entrada.motivo || 'Entrada manual'),
-    onSuccess: () => { qc.invalidateQueries({queryKey:['ingredientes-admin']}); setModalEntrada(null); setEntrada({quantidade:'',motivo:''}); toast.success('Estoque atualizado!') },
+    onSuccess: () => { qc.invalidateQueries({queryKey:['ingredientes-admin']}); qc.invalidateQueries({queryKey:['adicionais']}); qc.invalidateQueries({queryKey:['estoque-baixo']}); setModalEntrada(null); setEntrada({quantidade:'',motivo:''}); toast.success('Estoque atualizado!') },
     onError: (e: Error) => toast.error(e.message)
   })
 
@@ -192,7 +192,7 @@ function TabEstoqueBebidas() {
       const nova = Number(modalEntrada.quantidade_estoque) + Number(entrada.quantidade)
       await supabase.from('bebidas').update({ quantidade_estoque: nova }).eq('id', modalEntrada.id)
     },
-    onSuccess: () => { qc.invalidateQueries({queryKey:['bebidas-estoque']}); qc.invalidateQueries({queryKey:['bebidas-disp']}); setModalEntrada(null); setEntrada({quantidade:'',motivo:''}); toast.success('Estoque atualizado!') },
+    onSuccess: () => { qc.invalidateQueries({queryKey:['bebidas-estoque']}); qc.invalidateQueries({queryKey:['bebidas-disp']}); qc.invalidateQueries({queryKey:['estoque-baixo']}); setModalEntrada(null); setEntrada({quantidade:'',motivo:''}); toast.success('Estoque atualizado!') },
     onError: (e: Error) => toast.error(e.message)
   })
 
@@ -248,7 +248,7 @@ function TabEstoqueOutros() {
       const nova = Number(modalEntrada.quantidade_estoque) + Number(entrada.quantidade)
       await supabase.from('outros_produtos').update({ quantidade_estoque: nova }).eq('id', modalEntrada.id)
     },
-    onSuccess: () => { qc.invalidateQueries({queryKey:['outros-estoque']}); qc.invalidateQueries({queryKey:['outros-disp']}); setModalEntrada(null); setEntrada({quantidade:''}); toast.success('Estoque atualizado!') },
+    onSuccess: () => { qc.invalidateQueries({queryKey:['outros-estoque']}); qc.invalidateQueries({queryKey:['outros-disp']}); qc.invalidateQueries({queryKey:['estoque-baixo']}); setModalEntrada(null); setEntrada({quantidade:''}); toast.success('Estoque atualizado!') },
     onError: (e: Error) => toast.error(e.message)
   })
 

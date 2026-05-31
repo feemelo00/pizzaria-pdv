@@ -207,6 +207,7 @@ function ConversaDetalhe({ conversa }: { conversa: any }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['conversas-wpp'] })
+      qc.invalidateQueries({ queryKey: ['mensagens-wpp', conversa.telefone] })
       toast.success('Modo humano ativado por 10 minutos!')
     }
   })
@@ -219,6 +220,7 @@ function ConversaDetalhe({ conversa }: { conversa: any }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['conversas-wpp'] })
+      qc.invalidateQueries({ queryKey: ['mensagens-wpp', conversa.telefone] })
       toast.success('IA reativada!')
     }
   })

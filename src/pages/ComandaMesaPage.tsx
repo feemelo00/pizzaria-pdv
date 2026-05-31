@@ -190,6 +190,7 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['comanda', mesa.id] })
+      qc.invalidateQueries({ queryKey: ['pedidos-ativos'] })
       toast.success('Item removido!')
     },
     onError: (e: Error) => toast.error(e.message)
@@ -228,6 +229,8 @@ function ComandaMesa({ mesa, onAtualizar }: { mesa: Mesa; onAtualizar: (m: Mesa)
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mesas'] })
       qc.invalidateQueries({ queryKey: ['comanda', mesa.id] })
+      qc.invalidateQueries({ queryKey: ['pedidos-ativos'] })
+      qc.invalidateQueries({ queryKey: ['tempo-estimado'] })
       toast.success(`${mesa.nome} fechada e liberada!`)
       onAtualizar({ ...mesa, status: 'livre' })
     },
